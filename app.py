@@ -29,7 +29,7 @@ if st.button("Entrar", type="primary"):
         st.session_state.logged_in = True
         st.session_state.user_role = "admin"
         st.success("Login de administrador bem-sucedido!")
-        st.switch_page("pages/2_Painel_Administrador.py")
+        st.switch_page("pages/painel_admin.py")
     else:
         # Autenticação de voluntário pelo banco de dados
         voluntario = db.autenticar_voluntario(conn, login_email, login_senha)
@@ -38,7 +38,7 @@ if st.button("Entrar", type="primary"):
             st.session_state.user_role = "voluntario"
             st.session_state.voluntario_info = voluntario
             st.success(f"Bem-vindo(a), {voluntario[1]}!")
-            st.switch_page("pages/1_Painel_Voluntario.py")
+            st.switch_page("pages/painel_voluntario.py")
         else:
             st.error("Email ou senha incorretos. Tente novamente.")
 
