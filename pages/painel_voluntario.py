@@ -14,7 +14,10 @@ if not st.session_state.get('logged_in') or st.session_state.user_role != 'volun
 # --- CONTEÚDO DA PÁGINA ---
 conn = db.conectar_db()
 voluntario = st.session_state.voluntario_info
-nome_voluntario = voluntario[1]
+
+# Verifique a estrutura e acesse corretamente
+#st.write("Debug voluntario_info:", voluntario)
+nome_voluntario = voluntario.get("nome", "Voluntário")
 
 st.title(f"Portal de {nome_voluntario}")
 st.markdown("---")
@@ -31,10 +34,17 @@ datas_selecionadas = st.multiselect(
 
 ceia_passada = st.radio("Você serviu na Ceia do mês passado?", ["Não", "Sim"])
 
+voluntario_id = voluntario.get("id")
+if not voluntario_id:
+    st.error("Erro: ID do voluntário não encontrado.")
+    st.stop()
+
 if st.button("Enviar Indisponibilidade", type="primary"):
     datas_restricao_str = ", ".join(datas_selecionadas)
-    db.salvar_indisponibilidade(conn, voluntario[0], datas_restricao_str, ceia_passada, mes_ref)
+    db.salvar_indisponibilidade(conn, voluntario_id, datas_restricao_str, ceia_passada, mes_ref)
     st.success("Sua indisponibilidade foi registrada com sucesso!")
+
+    
 
 if st.sidebar.button("Logout"):
     for key in st.session_state.keys():

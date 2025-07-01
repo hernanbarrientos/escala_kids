@@ -1,4 +1,4 @@
-# pages/4_Alterar_Senha.py
+# pages/alterar_senha.py
 import streamlit as st
 import database as db
 
@@ -39,6 +39,6 @@ with st.form("alterar_senha_form"):
                 st.session_state.voluntario_info['senha'] = nova_senha
 
                 st.success("Senha alterada com sucesso! Você será redirecionado para o portal.")
-                st.switch_page("pages/1_Painel_Voluntario.py")
+                st.switch_page("pages/painel_voluntario.py")
             except Exception as e:
                 st.error(f"Ocorreu um erro ao salvar a senha: {e}")

@@ -1,4 +1,4 @@
-# pages/2_Painel_Administrador.py
+# pages/painel_admin.py
 import streamlit as st
 import pandas as pd
 import database as db
