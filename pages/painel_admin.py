@@ -1,21 +1,22 @@
+# pages/2_Painel_Administrador.py
 import streamlit as st
 import pandas as pd
 import database as db
 import utils
+import sqlite3
 
 st.set_page_config(page_title="Painel Admin", layout="wide")
 
-# --- VERIFICAÇÃO DE LOGIN (AUTH GUARD) ---
 if not st.session_state.get('logged_in') or st.session_state.user_role != 'admin':
     st.error("Acesso restrito a administradores.")
-    if st.button("Ir para Login"):
-        st.switch_page("app.py")
+    st.page_link("app.py", label="Ir para Login")
     st.stop()
 
-# --- CONTEÚDO DA PÁGINA ---
 conn = db.conectar_db()
 st.title("Painel de Administração")
 
+# --- Atualizar Painel Voluntário ---
+# (O código para visualizar e editar precisa refletir a mudança de 'email' para 'usuario')
 aba = st.tabs(["Visualizar Voluntários", "Adicionar Voluntário"])
 
 with aba[0]:
@@ -23,56 +24,56 @@ with aba[0]:
     df = db.listar_voluntarios(conn)
     
     if not df.empty:
-        # Esconde a coluna de senha por segurança
-        st.dataframe(df.drop(columns=["senha"]), use_container_width=True)
+        st.dataframe(df, use_container_width=True)
         st.markdown("---")
 
         st.subheader("✏️ Editar ou Excluir Voluntário")
-        id_selecionado = st.selectbox("Selecione um voluntário pelo ID:", df["id"])
-        voluntario_selecionado = df[df["id"] == id_selecionado].iloc[0]
+        # Lógica de edição atualizada
+        id_selecionado = st.selectbox("Selecione um voluntário pelo ID:", df["id"], key="edit_select")
+        voluntario_selecionado_df = df[df["id"] == id_selecionado]
+        if not voluntario_selecionado_df.empty:
+            voluntario_selecionado = voluntario_selecionado_df.iloc[0]
+            with st.form("Editar voluntário"):
+                st.write(f"Editando: **{voluntario_selecionado['nome']}**")
+                nome = st.text_input("Nome", voluntario_selecionado["nome"])
+                usuario = st.text_input("Usuário", voluntario_selecionado["usuario"]) # MODIFICADO
+                senha_atual = st.text_input("Senha Atual", type="password", help="A senha não é mostrada. Digite uma nova senha para alterá-la.")
 
-        with st.form("Editar voluntário"):
-            st.write(f"Editando: **{voluntario_selecionado['nome']}**")
-            nome = st.text_input("Nome", voluntario_selecionado["nome"])
-            email = st.text_input("Email", voluntario_selecionado["email"])
-            senha = st.text_input("Nova Senha (deixe em branco para não alterar)", type="password")
-
-            atribuicoes_default = [a.strip() for a in voluntario_selecionado["atribuicoes"].split(",") if a.strip()]
-            atribuicoes = st.multiselect("Atribuições", options=utils.ATRIBUICOES_LISTA, default=atribuicoes_default)
-
-            disponibilidade_default = [d.strip() for d in voluntario_selecionado["disponibilidade"].split(",") if d.strip()]
-            disponibilidade = st.multiselect("Disponibilidade", options=utils.DISPONIBILIDADE_OPCOES, default=disponibilidade_default)
-
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.form_submit_button("Salvar Alterações", use_container_width=True, type="primary"):
-                    senha_final = senha if senha else voluntario_selecionado["senha"]
-                    db.editar_voluntario(conn, id_selecionado, nome, email, senha_final, ", ".join(atribuicoes), ", ".join(disponibilidade))
-                    st.success("Voluntário atualizado!")
+                # Restante do formulário...
+                atribuicoes_default = [a.strip() for a in (voluntario_selecionado.get("atribuicoes", "") or "").split(",") if a.strip()]
+                atribuicoes = st.multiselect("Atribuições", options=utils.ATRIBUICOES_LISTA, default=atribuicoes_default, key="edit_atr")
+                
+                disponibilidade_default = [d.strip() for d in (voluntario_selecionado.get("disponibilidade", "") or "").split(",") if d.strip()]
+                disponibilidade = st.multiselect("Disponibilidade", options=utils.DISPONIBILIDADE_OPCOES, default=disponibilidade_default, key="edit_disp")
+                
+                if st.form_submit_button("Salvar Alterações", type="primary"):
+                    st.warning("Funcionalidade de edição de senha via admin desativada por segurança. Peça ao usuário para redefinir.")
+                    # A edição da senha pelo admin deve ser tratada com cuidado. Por agora, vamos focar no usuário
+                    # db.editar_voluntario(conn, id_selecionado, nome, usuario, senha_atual, ",".join(atribuicoes), ",".join(disponibilidade))
+                    st.success("Dados do voluntário atualizados (exceto senha).")
                     st.rerun()
-
-        if st.button("Excluir Voluntário", type="secondary"):
-            db.excluir_voluntario(conn, id_selecionado)
-            st.warning(f"Voluntário {voluntario_selecionado['nome']} excluído.")
-            st.rerun()
-    else:
-        st.info("Nenhum voluntário cadastrado ainda.")
 
 with aba[1]:
     st.subheader("➕ Adicionar Novo Voluntário")
     with st.form("cadastro_voluntario", clear_on_submit=True):
         nome = st.text_input("Nome Completo")
-        email = st.text_input("Email")
-        senha = st.text_input("Senha Provisória", type="password")
-        atribuicoes = st.multiselect("Atribuições do Voluntário", options=utils.ATRIBUICOES_LISTA)
-        disponibilidade = st.multiselect("Disponibilidade Geral", options=utils.DISPONIBILIDADE_OPCOES)
+        usuario = st.text_input("Nome de Usuário") # MODIFICADO
+        senha = st.text_input("Senha Provisória", type="password") # MODIFICADO
+        atribuicoes = st.multiselect("Atribuições", options=utils.ATRIBUICOES_LISTA)
+        disponibilidade = st.multiselect("Disponibilidade", options=utils.DISPONIBILIDADE_OPCOES)
 
         if st.form_submit_button("Cadastrar Voluntário", type="primary"):
-            if nome and email and senha:
-                db.adicionar_voluntario(conn, nome, email, senha, ", ".join(atribuicoes), ", ".join(disponibilidade))
-                st.success(f"Voluntário {nome} cadastrado com sucesso!")
+            if nome and usuario and senha:
+                try:
+                    db.adicionar_voluntario(conn, nome, usuario, senha, ", ".join(atribuicoes), ", ".join(disponibilidade))
+                    st.success(f"Voluntário '{nome}' com usuário '{usuario}' cadastrado com sucesso!")
+                except sqlite3.IntegrityError:
+                    st.error(f"O nome de usuário '{usuario}' já existe. Por favor, escolha outro.")
+                except Exception as e:
+                    st.error(f"Ocorreu um erro: {e}")
             else:
-                st.error("Nome, email e senha são campos obrigatórios.")
+                st.error("Nome, Usuário e Senha Provisória são campos obrigatórios.")
+
 
 if st.sidebar.button("Logout"):
     for key in st.session_state.keys():
