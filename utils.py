@@ -9,7 +9,6 @@ ATRIBUICOES_LISTA = [
     "Recepção",
     "Baby Historia",
     "Baby Auxiliar",
-    "Apoio",
     "Inclusão",
     "Primario/Juvenil",
     "Auxiliar"

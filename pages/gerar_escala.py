@@ -107,22 +107,52 @@ if st.button("Gerar Nova Escala", type="primary"):
         # 6. EXIBIR A ESCALA
         st.success("✅ Escala gerada com sucesso!")
         
+        # REGRA ADICIONAL: Quem está na Recepção, também está no Apoio.
+        # Vamos criar as entradas de 'Apoio' com base nas de 'Recepção'.
+        entradas_apoio = []
+        for entrada in escala_gerada:
+            if entrada['Função'] == 'Recepção':
+                # Cria uma nova entrada para o Apoio com o mesmo voluntário e data
+                nova_entrada_apoio = {
+                    'Data': entrada['Data'],
+                    'Função': 'Apoio', # A nova função
+                    'Voluntário Escalado': entrada['Voluntário Escalado']
+                }
+                entradas_apoio.append(nova_entrada_apoio)
+        
+        # Adiciona as novas entradas de apoio à lista principal da escala
+        escala_gerada.extend(entradas_apoio)
+
+
         if escala_gerada:
             escala_df = pd.DataFrame(escala_gerada)
             
-            # Formata a exibição para agrupar por data
-            escala_final_formatada = escala_df.pivot_table(index='Data', columns='Função', values='Voluntário Escalado', aggfunc='first').fillna('')
+            # Ordena as colunas para uma melhor visualização (Recepção e Apoio ficam perto)
+            ordem_colunas = ['Recepção', 'Apoio'] + [col for col in sorted(escala_df['Função'].unique()) if col not in ['Recepção', 'Apoio']]
             
+            # Formata a exibição para agrupar por data
+            escala_final_formatada = escala_df.pivot_table(
+                index='Data', 
+                columns='Função', 
+                values='Voluntário Escalado', 
+                aggfunc='first'
+            ).fillna('')
+            
+            # Reordena as colunas para garantir a ordem desejada
+            escala_final_formatada = escala_final_formatada.reindex(columns=ordem_colunas).fillna('')
+
             st.subheader("🗓️ Escala Proposta")
             st.dataframe(escala_final_formatada, use_container_width=True)
 
-            # Mostra um aviso para vagas não preenchidas
+            # O restante da lógica para mostrar vagas abertas continua funcionando normalmente
             vagas_abertas = escala_df[escala_df['Voluntário Escalado'] == '**VAGA NÃO PREENCHIDA**']
             if not vagas_abertas.empty:
                 st.warning("Atenção: As seguintes vagas não puderam ser preenchidas automaticamente:")
                 st.dataframe(vagas_abertas.drop(columns=['Voluntário Escalado']), use_container_width=True)
         else:
             st.error("Não foi possível gerar a escala. Verifique se há cultos configurados para o próximo mês.")
+
+
 
 
 if st.sidebar.button("Logout"):

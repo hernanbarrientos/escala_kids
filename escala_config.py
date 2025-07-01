@@ -7,7 +7,7 @@
 NECESSIDADES_ESCALA = {
     "Quinta-feira": {
         "Recepção": 1,
-        "Apoio": 1,
+        #"Apoio": 1,
         "Baby Historia": 1,
         "Baby Auxiliar": 1,
         "Primario/Juvenil": 1,
@@ -18,19 +18,19 @@ NECESSIDADES_ESCALA = {
         "Recepção": 1,
         "Baby Historia": 1,
         "Baby Auxiliar": 2,
-        "Apoio": 1,
+        #"Apoio": 1,
         "Inclusão": 1,
         "Primario/Juvenil": 1,
-        "Auxiliar": 2
+        "Auxiliar": 1
     },
     "Domingo Noite": {
         "Lider da escala": 1,
         "Recepção": 2,
         "Baby Historia": 1,
         "Baby Auxiliar": 2,
-        "Apoio": 2,
+        #"Apoio": 2,
         "Inclusão": 1,
         "Primario/Juvenil": 1,
-        "Auxiliar": 2
+        "Auxiliar": 1
     }
 }
