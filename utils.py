@@ -5,10 +5,10 @@ import calendar
 
 # --- CONSTANTES DA APLICAÇÃO ---
 ATRIBUICOES_LISTA = [
+    "Lider da escala",
     "Recepção",
     "Baby Historia",
-    "Baby auxiliar 1",
-    "Baby auxiliar 2",
+    "Baby Auxiliar",
     "Apoio",
     "Inclusão",
     "Primario/Juvenil",

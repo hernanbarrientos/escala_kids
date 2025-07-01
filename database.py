@@ -78,3 +78,15 @@ def salvar_indisponibilidade(conn, voluntario_id, datas, ceia, mes):
             VALUES (?, ?, ?, ?)
         """, (voluntario_id, datas, ceia, mes))
     conn.commit()
+
+    #Função para buscar eficientemente as indisponibilidades de um mês específico
+
+def listar_indisponibilidades_por_mes(conn, mes_referencia):
+    """Retorna um DataFrame com as indisponibilidades de um determinado mês."""
+    query = """
+        SELECT v.id as voluntario_id, v.nome, i.datas_restricao, i.ceia_passada
+        FROM indisponibilidades i
+        JOIN voluntarios v ON i.voluntario_id = v.id
+        WHERE i.mes_referencia = ?
+    """
+    return pd.read_sql_query(query, conn, params=(mes_referencia,))
