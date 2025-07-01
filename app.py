@@ -25,7 +25,7 @@ if st.button("Entrar", type="primary"):
         st.session_state.logged_in = True
         st.session_state.user_role = "admin"
         st.success("Login de administrador bem-sucedido!")
-        st.switch_page("pages/2_Painel_Administrador.py")
+        st.switch_page("pages/painel_admin.py")
     else:
         voluntario = db.autenticar_voluntario(conn, login_usuario, login_senha)
         if voluntario:
@@ -36,10 +36,10 @@ if st.button("Entrar", type="primary"):
             # NOVA LÓGICA: Verifica se é o primeiro acesso
             if voluntario['primeiro_acesso'] == 1:
                 st.info("Detectamos que este é seu primeiro acesso. Por favor, altere sua senha.")
-                st.switch_page("pages/4_Alterar_Senha.py")
+                st.switch_page("pages/alterar_senha.py")
             else:
                 st.success(f"Bem-vindo(a) de volta, {voluntario['nome']}!")
-                st.switch_page("pages/1_Painel_Voluntario.py")
+                st.switch_page("pages/painel_voluntario.py")
         else:
             st.error("Usuário ou senha incorretos. Tente novamente.")
 
