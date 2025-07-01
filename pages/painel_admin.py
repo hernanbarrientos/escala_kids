@@ -16,7 +16,7 @@ conn = db.conectar_db()
 st.title("Painel de Administração")
 
 # --- Atualizar Painel Voluntário ---
-# (O código para visualizar e editar precisa refletir a mudança de 'email' para 'usuario')
+
 aba = st.tabs(["Visualizar Voluntários", "Adicionar Voluntário"])
 
 with aba[0]:
@@ -48,7 +48,7 @@ with aba[0]:
                 
                 if st.form_submit_button("Salvar Alterações", type="primary"):
                     st.warning("Funcionalidade de edição de senha via admin desativada por segurança. Peça ao usuário para redefinir.")
-                    # A edição da senha pelo admin deve ser tratada com cuidado. Por agora, vamos focar no usuário
+
                     # db.editar_voluntario(conn, id_selecionado, nome, usuario, senha_atual, ",".join(atribuicoes), ",".join(disponibilidade))
                     st.success("Dados do voluntário atualizados (exceto senha).")
                     st.rerun()
@@ -57,8 +57,8 @@ with aba[1]:
     st.subheader("➕ Adicionar Novo Voluntário")
     with st.form("cadastro_voluntario", clear_on_submit=True):
         nome = st.text_input("Nome Completo")
-        usuario = st.text_input("Nome de Usuário") # MODIFICADO
-        senha = st.text_input("Senha Provisória", type="password") # MODIFICADO
+        usuario = st.text_input("Nome de Usuário")
+        senha = st.text_input("Senha Provisória", type="password") 
         atribuicoes = st.multiselect("Atribuições", options=utils.ATRIBUICOES_LISTA)
         disponibilidade = st.multiselect("Disponibilidade", options=utils.DISPONIBILIDADE_OPCOES)
 

@@ -1,0 +1,14 @@
+# Banco de dados local
+voluntarios.db
+
+# Arquivos temporários do Python
+__pycache__/
+*.py[cod]
+
+# Configurações locais do VS Code ou outros editores
+.vscode/
+*.swp
+
+# Arquivos de sistema
+.DS_Store
+Thumbs.db
