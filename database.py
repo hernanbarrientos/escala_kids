@@ -20,7 +20,14 @@ def criar_tabelas(conn):
         primeiro_acesso INTEGER DEFAULT 1
     )''')
 
-    c.execute('''CREATE TABLE IF NOT EXISTS indisponibilidades (...)''') # Mantenha sua tabela de indisponibilidades igual
+    c.execute('''CREATE TABLE IF NOT EXISTS indisponibilidades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    voluntario_id INTEGER,
+    datas_restricao TEXT,
+    ceia_passada TEXT,
+    mes_referencia TEXT,
+    FOREIGN KEY(voluntario_id) REFERENCES voluntarios(id)
+)''')
     conn.commit()
 
 # MODIFICAÇÃO: Recebe 'usuario' em vez de 'email' e seta primeiro_acesso
