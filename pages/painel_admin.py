@@ -74,7 +74,9 @@ with tab_gerenciar:
 
                     db.editar_voluntario(conn, id_selecionado, nome, usuario, senha_final, atribuicoes_str, disponibilidade_str)
                     st.success(f"Dados do voluntário '{nome}' atualizados com sucesso!")
+
                     # A página será recarregada automaticamente pelo Streamlit após a mensagem.
+                    st.rerun()
 
             st.markdown("---")
             
@@ -86,6 +88,7 @@ with tab_gerenciar:
                 db.excluir_voluntario(conn, id_selecionado)
                 st.success(f"Voluntário '{voluntario_selecionado['nome']}' excluído. A lista será atualizada.")
                 # A página será recarregada automaticamente.
+                st.rerun()
 
     except Exception as e:
         st.error(f"Ocorreu um erro inesperado: {e}")
