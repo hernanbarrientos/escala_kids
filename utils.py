@@ -6,6 +6,7 @@ from collections import defaultdict # Importe defaultdict aqui
 
 # --- CONSTANTES DA APLICAÇÃO ---
 ATRIBUICOES_LISTA = [
+    "Administrador"
     "Lider da escala",
     "Recepção",
     "Baby Historia",
