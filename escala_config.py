@@ -25,7 +25,7 @@ NECESSIDADES_ESCALA = {
     },
     "Domingo Noite": {
         "Lider da escala": 1,
-        "Recepção": 2,
+        "Recepção": 1,
         "Baby Historia": 1,
         "Baby Auxiliar": 2,
         #"Apoio": 2,

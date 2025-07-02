@@ -32,7 +32,7 @@ serviu_ceia_salvo = "Não" # Padrão
 if indisponibilidade_anterior:
     # Separa as datas em uma lista
     datas_restricao_salvas = [d.strip() for d in indisponibilidade_anterior['datas_restricao'].split(',') if d.strip()]
-    serviu_ceia_salvo = indisponibilidade_anterior['serviu_ceia']
+    serviu_ceia_salvo = indisponibilidade_anterior.get('ceia_passada') if indisponibilidade_anterior else None
 
 # --- VERIFICAR STATUS DE EDIÇÃO ---
 edicao_liberada = db.get_edicao_liberada(conn, mes_ref)
