@@ -14,8 +14,10 @@ if 'logged_in' not in st.session_state:
     st.session_state.user_role = None
     st.session_state.voluntario_info = None
 
-st.title("👥 Portal de Voluntários - Ministério Infantil")
+st.title("Ministério Kids")
+st.title("👥 Portal de Voluntários")
 st.header("Login de Acesso")
+
 
 login_usuario = st.text_input("Usuário", key="login_usuario")
 login_senha = st.text_input("Senha", type="password", key="login_senha")
