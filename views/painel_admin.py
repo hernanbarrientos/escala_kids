@@ -85,8 +85,9 @@ def show_page():
                             disponibilidade_str = ",".join(disponibilidade_selecionada)
                             
                             db.editar_voluntario(conn, id_selecionado, nome, usuario_login, senha_para_salvar, atribuicoes_str, disponibilidade_str, role=usuario['role'])
-                            st.success(f"Dados do usuário '{nome}' atualizados com sucesso!")
-                            st.rerun()
+                            # st.success(f"Dados do usuário '{nome}' atualizados com sucesso!")
+                            st.toast(f"Dados do usuário '{nome}' atualizados com sucesso!", icon="✅")
+                            # st.rerun()
 
                     st.markdown("---")
 
@@ -107,7 +108,7 @@ def show_page():
     with tab_adicionar:
         st.subheader("➕ Adicionar Novo Usuário")
         with st.form("form_adicionar_usuario", clear_on_submit=True):
-            nome = st.text_input("Nome Completo")
+            nome = st.text_input("Nome que irá aparecer na escala")
             usuario = st.text_input("Nome de Usuário (Login)")
             senha = st.text_input("Senha Provisória", type="password")
             role = st.selectbox("Tipo de Usuário", ["voluntario", "admin"])
@@ -135,14 +136,15 @@ def show_page():
                 if nome and usuario and senha:
                     try:
                         db.adicionar_voluntario(conn, nome, usuario, senha, ",".join(atribuicoes_selecionadas), ",".join(disponibilidade_selecionada), role=role)
-                        st.success(f"Usuário '{nome}' ({role.capitalize()}) cadastrado com sucesso!")
-                        st.rerun()
+                        # st.success(f"Usuário '{nome}' ({role.capitalize()}) cadastrado com sucesso!")
+                        st.toast(f"Usuário '{nome}' ({role.capitalize()}) cadastrado com sucesso!", icon="✅")
+                        # st.rerun()
                     except sqlite3.IntegrityError:
                         st.error(f"O nome de usuário '{usuario}' já existe. Por favor, escolha outro.")
                     except Exception as e:
                         st.error(f"Ocorreu um erro: {e}")
                 else:
-                    st.error("Nome, Usuário (Login) e Senha Provisória são campos obrigatórios.")
+                    st.error("Nome, Usuário (Login), Senha Provisória, Atribuições e Disponibilidade Geral são campos obrigatórios.")
 
     # =================================================
     # ABA 3: Configurações de Escala
@@ -161,8 +163,9 @@ def show_page():
         if st.button("💾 Salvar Configuração"):
             status = liberar == "Liberar Edição"
             db.set_edicao_liberada(conn, mes_ref, status)
-            st.success("Configuração atualizada!")
-            st.rerun()
+            # st.success("Configuração atualizada!")
+            # st.rerun()
+            st.toast("Configuração atualizada!", icon="✅")
 
         st.markdown("---")
         st.subheader("📋 Resumo de Disponibilidades Confirmadas")

@@ -47,7 +47,8 @@ def show_page():
     if not edicao_liberada:
         st.warning(f"As edições para a escala de **{mes_ref}** estão bloqueadas.")
     else:
-        st.success(f"As edições para a escala de **{mes_ref}** estão liberadas.")
+        # st.success(f"As edições para a escala de **{mes_ref}** estão liberadas.")
+        st.toast(f"As edições para a escala de **{mes_ref}** estão liberadas.")
 
     st.markdown("---")
     st.write("Selecione os dias e horários que você **ESTÁ DISPONÍVEL** para servir:")
@@ -86,8 +87,9 @@ def show_page():
     if st.button("Salvar Disponibilidade", type="primary", disabled=not edicao_liberada):
         datas_disponiveis_final = ", ".join(datas_selecionadas_atuais)
         if db.salvar_disponibilidade(conn, voluntario_id, datas_disponiveis_final, ceia_passada_radio_value, mes_ref):
-            st.success("Sua disponibilidade foi registrada/atualizada com sucesso!")
-            st.rerun()
+            # st.success("Sua disponibilidade foi registrada/atualizada com sucesso!")
+            st.toast("Sua disponibilidade foi atualizada com sucesso!")
+            # st.rerun()
         else:
             st.error("Ocorreu um erro ao registrar/atualizar sua disponibilidade.")
 
