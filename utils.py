@@ -1,23 +1,27 @@
+# utils.py
+
 import locale
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import calendar
+from collections import defaultdict
+import bcrypt 
+import streamlit as st
 
 # --- CONSTANTES DA APLICAÇÃO ---
 ATRIBUICOES_LISTA = [
+    "Lider da escala",
     "Recepção",
+    "Auxiliar",
     "Baby Historia",
-    "Baby auxiliar 1",
-    "Baby auxiliar 2",
-    "Apoio",
-    "Inclusão",
     "Primario/Juvenil",
-    "Auxiliar"
+    "Inclusão",
+    "Baby Auxiliar",    
 ]
 
 DISPONIBILIDADE_OPCOES = [
-    "Domingo manhã",
-    "Domingo tarde",
+    "Domingo Manhã",  
+    "Domingo Noite", 
     "Quinta-feira"
 ]
 
@@ -32,26 +36,94 @@ def configurar_localidade():
         except locale.Error:
             print("Localidade pt_BR não encontrada, usando padrão do sistema.")
 
-def get_dias_culto_proximo_mes():
-    """Gera uma lista de opções para indisponibilidade (quintas e domingos) do próximo mês."""
-    configurar_localidade()
+def get_dias_culto_proximo_mes(disponibilidade_geral_voluntario: list = None):
+    """
+    Gera um dicionário de opções de culto para o próximo mês, filtrado pela
+    disponibilidade geral do voluntário.
+    """
+    if disponibilidade_geral_voluntario is None:
+        disponibilidade_geral_voluntario = []
+
+    # Sua função de configurar localidade aqui (se tiver)
+    # configurar_localidade() 
+    
     hoje = datetime.now()
     proximo_mes_data = hoje + relativedelta(months=1)
     ano = proximo_mes_data.year
     mes = proximo_mes_data.month
-
     nome_mes_ref = proximo_mes_data.strftime("%B").capitalize()
-    opcoes_indisponibilidade = []
+
+    opcoes_agrupadas = defaultdict(list)
     num_dias = calendar.monthrange(ano, mes)[1]
 
     for dia in range(1, num_dias + 1):
         data_atual = datetime(ano, mes, dia)
-        dia_da_semana = data_atual.weekday()  # Segunda-feira é 0, Domingo é 6
+        dia_formatado = data_atual.strftime('%d/%m')
+        dia_da_semana = data_atual.weekday()
 
-        if dia_da_semana == 3:  # Quinta-feira
-            opcoes_indisponibilidade.append(f"{data_atual.strftime('%d/%m')} - Quinta-feira")
-        elif dia_da_semana == 6:  # Domingo
-            opcoes_indisponibilidade.append(f"{data_atual.strftime('%d/%m')} - Domingo Manhã")
-            opcoes_indisponibilidade.append(f"{data_atual.strftime('%d/%m')} - Domingo Noite")
+        if dia_da_semana == 3 and "Quinta-feira" in disponibilidade_geral_voluntario:
+            opcoes_agrupadas["Quinta-feira"].append(dia_formatado)
+        elif dia_da_semana == 6: # Domingo
+            if "Domingo Manhã" in disponibilidade_geral_voluntario:
+                opcoes_agrupadas["Domingo Manhã"].append(dia_formatado)
+            if "Domingo Noite" in disponibilidade_geral_voluntario:
+                opcoes_agrupadas["Domingo Noite"].append(dia_formatado)
 
-    return opcoes_indisponibilidade, f"{nome_mes_ref} de {ano}"
+    return dict(opcoes_agrupadas), f"{nome_mes_ref} de {ano}"
+
+# --- FUNÇÕES DE SEGURANÇA (SENHAS) ---
+def hash_password(password):
+    """
+    Gera um hash bcrypt da senha fornecida.
+    A senha deve ser codificada para bytes antes de ser hasheada.
+    """
+    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+    return hashed.decode('utf-8') # Decodifica de volta para string para armazenamento
+
+def check_password(password, hashed_password):
+    """
+    Verifica se a senha fornecida corresponde ao hash armazenado.
+    Ambas devem ser codificadas para bytes.
+    """
+    try:
+        return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+    except ValueError:
+        # Lida com casos onde o hash armazenado pode estar malformado
+        return False
+    
+def render_sidebar():
+    with st.sidebar:
+        st.title("Ministério Kids")
+        st.markdown("---")
+
+        if st.session_state.get("logged_in"):
+            st.write(f"Bem-vindo(a), **{st.session_state.voluntario_info['nome']}**!")
+            
+            if st.session_state.user_role == 'admin':
+                st.header("Menu do Administrador")
+                if st.button("Administração", use_container_width=True, type="primary" if st.session_state.page == "painel_admin" else "secondary"):
+                    st.session_state.page = "painel_admin"
+                    st.rerun()
+                if st.button("Gerar Escala", use_container_width=True, type="primary" if st.session_state.page == "gerar_escala" else "secondary"):
+                    st.session_state.page = "gerar_escala"
+                    st.rerun()
+            else: # 'voluntario'
+                st.header("Menu do Voluntário")
+                if st.button("Meu Painel", use_container_width=True, type="primary" if st.session_state.page == "painel_voluntario" else "secondary"):
+                    st.session_state.page = "painel_voluntario"
+                    st.rerun()
+
+            if st.button("Alterar Senha", use_container_width=True, type="primary" if st.session_state.page == "alterar_senha" else "secondary"):
+                st.session_state.page = "alterar_senha"
+                st.rerun()
+
+            st.markdown("---")
+            if st.button("Logout", use_container_width=True):
+                keys_to_keep = ['page']
+                for key in list(st.session_state.keys()):
+                    if key not in keys_to_keep: del st.session_state[key]
+                st.session_state.logged_in = False
+                st.session_state.page = "login"
+                st.rerun()
+        else:
+            st.info("Faça o login para acessar o sistema.")

@@ -1,45 +1,54 @@
 import streamlit as st
 import database as db
+import utils
 
-st.set_page_config(
-    page_title="Portal de Voluntários",
-    layout="centered"
-)
+# Importa as "views" da nova pasta
+from views import painel_admin, painel_voluntario, alterar_senha, gerar_escala
 
-# --- CONEXÃO COM DB E CRIAÇÃO DE TABELAS ---
-conn = db.conectar_db()
-db.criar_tabelas(conn)
+st.set_page_config(page_title="Portal Ministério Kids", layout="wide")
 
-# --- INICIALIZAÇÃO DO ESTADO DA SESSÃO ---
+if 'page' not in st.session_state:
+    st.session_state.page = 'login'
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.user_role = None
     st.session_state.voluntario_info = None
 
-# --- TELA DE LOGIN ---
-st.title("👥 Portal de Voluntários - Ministério Infantil")
-st.header("Login de Acesso")
+utils.render_sidebar()
 
-login_email = st.text_input("Email", key="login_email")
-login_senha = st.text_input("Senha", type="password", key="login_senha")
+if st.session_state.page == 'login':
+    with st.columns(3)[1]:
+        with st.container(border=True):
+            st.title("👶 Ministério Kids")
+            st.subheader("🔒 Portal de Voluntários")
+            conn = db.conectar_db()
+            db.criar_tabelas(conn)
+            login_usuario = st.text_input("Usuário")
+            login_senha = st.text_input("Senha", type="password")
 
-if st.button("Entrar", type="primary"):
-    # Credenciais fixas para administrador
-    if login_email == "admin@igreja.com" and login_senha == "admin123":
-        st.session_state.logged_in = True
-        st.session_state.user_role = "admin"
-        st.success("Login de administrador bem-sucedido!")
-        st.switch_page("pages/painel_admin.py")
-    else:
-        # Autenticação de voluntário pelo banco de dados
-        voluntario = db.autenticar_voluntario(conn, login_email, login_senha)
-        if voluntario:
-            st.session_state.logged_in = True
-            st.session_state.user_role = "voluntario"
-            st.session_state.voluntario_info = voluntario
-            st.success(f"Bem-vindo(a), {voluntario[1]}!")
-            st.switch_page("pages/painel_voluntario.py")
-        else:
-            st.error("Email ou senha incorretos. Tente novamente.")
+            if st.button("Entrar", type="primary", use_container_width=True):
+                user_data = db.autenticar_voluntario(conn, login_usuario, login_senha)
+                if user_data:
+                    st.session_state.logged_in = True
+                    st.session_state.user_role = user_data['role']
+                    st.session_state.voluntario_info = dict(user_data)
+                    
+                    if user_data['role'] == 'admin':
+                        st.session_state.page = 'painel_admin'
+                    elif user_data['primeiro_acesso'] == 1:
+                        st.session_state.page = 'alterar_senha'
+                    else:
+                        st.session_state.page = 'painel_voluntario'
+                    st.rerun()
+                else:
+                    st.error("Usuário ou senha incorretos.")
+            conn.close()
 
-st.info("Para acesso administrativo, utilize as credenciais fornecidas.")
+elif st.session_state.page == 'painel_admin':
+    painel_admin.show_page()
+elif st.session_state.page == 'painel_voluntario':
+    painel_voluntario.show_page()
+elif st.session_state.page == 'gerar_escala':
+    gerar_escala.show_page()
+elif st.session_state.page == 'alterar_senha':
+    alterar_senha.show_page()
