@@ -41,11 +41,13 @@ def get_dias_culto_proximo_mes(disponibilidade_geral_voluntario: list = None):
     Gera um dicionário de opções de culto para o próximo mês, filtrado pela
     disponibilidade geral do voluntário.
     """
+    # --- CORREÇÃO APLICADA AQUI ---
+    # Garante que a localidade seja definida para Português
+    configurar_localidade()
+    
     if disponibilidade_geral_voluntario is None:
-        disponibilidade_geral_voluntario = []
-
-    # Sua função de configurar localidade aqui (se tiver)
-    # configurar_localidade() 
+        # Se nenhuma disponibilidade for fornecida, retorna todos os dias de culto possíveis
+        disponibilidade_geral_voluntario = DISPONIBILIDADE_OPCOES
     
     hoje = datetime.now()
     proximo_mes_data = hoje + relativedelta(months=1)
@@ -75,20 +77,17 @@ def get_dias_culto_proximo_mes(disponibilidade_geral_voluntario: list = None):
 def hash_password(password):
     """
     Gera um hash bcrypt da senha fornecida.
-    A senha deve ser codificada para bytes antes de ser hasheada.
     """
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    return hashed.decode('utf-8') # Decodifica de volta para string para armazenamento
+    return hashed.decode('utf-8')
 
 def check_password(password, hashed_password):
     """
     Verifica se a senha fornecida corresponde ao hash armazenado.
-    Ambas devem ser codificadas para bytes.
     """
     try:
         return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
-    except ValueError:
-        # Lida com casos onde o hash armazenado pode estar malformado
+    except (ValueError, TypeError):
         return False
     
 def render_sidebar():
