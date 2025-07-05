@@ -16,9 +16,7 @@ ATRIBUICOES_LISTA = [
     "Baby Historia",
     "Primario/Juvenil",
     "Inclusão",
-    "Baby Auxiliar",
-
-    
+    "Baby Auxiliar",    
 ]
 
 DISPONIBILIDADE_OPCOES = [
@@ -38,33 +36,40 @@ def configurar_localidade():
         except locale.Error:
             print("Localidade pt_BR não encontrada, usando padrão do sistema.")
 
-def get_dias_culto_proximo_mes():
+def get_dias_culto_proximo_mes(disponibilidade_geral_voluntario: list = None):
     """
-    Gera um dicionário de opções para indisponibilidade (quintas e domingos) do próximo mês,
-    agrupadas por dia da semana e turno.
+    Gera um dicionário de opções de culto para o próximo mês, filtrado pela
+    disponibilidade geral do voluntário.
     """
-    configurar_localidade()
+    if disponibilidade_geral_voluntario is None:
+        disponibilidade_geral_voluntario = []
+
+    # Sua função de configurar localidade aqui (se tiver)
+    # configurar_localidade() 
+    
     hoje = datetime.now()
     proximo_mes_data = hoje + relativedelta(months=1)
     ano = proximo_mes_data.year
     mes = proximo_mes_data.month
-
     nome_mes_ref = proximo_mes_data.strftime("%B").capitalize()
-    opcoes_agrupadas = defaultdict(list) 
+
+    opcoes_agrupadas = defaultdict(list)
     num_dias = calendar.monthrange(ano, mes)[1]
 
     for dia in range(1, num_dias + 1):
         data_atual = datetime(ano, mes, dia)
-        dia_da_semana = data_atual.weekday() # Segunda-feira é 0, Domingo é 6
+        dia_formatado = data_atual.strftime('%d/%m')
+        dia_da_semana = data_atual.weekday()
 
-        if dia_da_semana == 3: # Quinta-feira (índice 3)
-            opcoes_agrupadas["Quinta-feira"].append(data_atual.strftime("%d/%m"))
-        elif dia_da_semana == 6: # Domingo (índice 6)
-            opcoes_agrupadas["Domingo Manhã"].append(data_atual.strftime("%d/%m"))
-            opcoes_agrupadas["Domingo Noite"].append(data_atual.strftime("%d/%m"))
+        if dia_da_semana == 3 and "Quinta-feira" in disponibilidade_geral_voluntario:
+            opcoes_agrupadas["Quinta-feira"].append(dia_formatado)
+        elif dia_da_semana == 6: # Domingo
+            if "Domingo Manhã" in disponibilidade_geral_voluntario:
+                opcoes_agrupadas["Domingo Manhã"].append(dia_formatado)
+            if "Domingo Noite" in disponibilidade_geral_voluntario:
+                opcoes_agrupadas["Domingo Noite"].append(dia_formatado)
 
-    # Retorna o defaultdict e o nome do mês de referência
-    return opcoes_agrupadas, f"{nome_mes_ref} de {proximo_mes_data.year}"
+    return dict(opcoes_agrupadas), f"{nome_mes_ref} de {ano}"
 
 # --- FUNÇÕES DE SEGURANÇA (SENHAS) ---
 def hash_password(password):
@@ -87,23 +92,7 @@ def check_password(password, hashed_password):
         return False
     
 def render_sidebar():
-    """
-    Cria a barra lateral de navegação e ESCONDE A SIDEBAR NATIVA do Streamlit.
-    """
     with st.sidebar:
-        # --- CORREÇÃO: Injeta CSS para esconder a navegação automática ---
-        st.markdown(
-            """
-            <style>
-                [data-testid="stSidebarNav"] {
-                    display: none;
-                }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-
-        # O restante da sua função permanece exatamente o mesmo
         st.title("Ministério Kids")
         st.markdown("---")
 
@@ -112,19 +101,29 @@ def render_sidebar():
             
             if st.session_state.user_role == 'admin':
                 st.header("Menu do Administrador")
-                # Usando os nomes de arquivo que você definiu
-                st.page_link("pages/painel_admin.py", label="Administração", icon="🛠️")
-                st.page_link("pages/gerar_escala.py", label="Gerar Escala", icon="🗓️")
+                if st.button("Administração", use_container_width=True, type="primary" if st.session_state.page == "painel_admin" else "secondary"):
+                    st.session_state.page = "painel_admin"
+                    st.rerun()
+                if st.button("Gerar Escala", use_container_width=True, type="primary" if st.session_state.page == "gerar_escala" else "secondary"):
+                    st.session_state.page = "gerar_escala"
+                    st.rerun()
             else: # 'voluntario'
                 st.header("Menu do Voluntário")
-                st.page_link("pages/painel_voluntario.py", label="Meu Painel", icon="👤")
+                if st.button("Meu Painel", use_container_width=True, type="primary" if st.session_state.page == "painel_voluntario" else "secondary"):
+                    st.session_state.page = "painel_voluntario"
+                    st.rerun()
 
-            st.page_link("pages/alterar_senha.py", label="Alterar Senha", icon="🔑")
+            if st.button("Alterar Senha", use_container_width=True, type="primary" if st.session_state.page == "alterar_senha" else "secondary"):
+                st.session_state.page = "alterar_senha"
+                st.rerun()
 
             st.markdown("---")
-            if st.button("Logout", type="secondary", use_container_width=True):
+            if st.button("Logout", use_container_width=True):
+                keys_to_keep = ['page']
                 for key in list(st.session_state.keys()):
-                    del st.session_state[key]
-                st.switch_page("app.py")
+                    if key not in keys_to_keep: del st.session_state[key]
+                st.session_state.logged_in = False
+                st.session_state.page = "login"
+                st.rerun()
         else:
             st.info("Faça o login para acessar o sistema.")
