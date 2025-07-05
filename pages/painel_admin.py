@@ -5,200 +5,164 @@ import sqlite3
 import database as db
 import utils
 
-# --- Configuração da Página e Verificação de Login ---
+# --- Configuração da Página e Sidebar Central ---
 st.set_page_config(page_title="Painel Admin", layout="wide")
+utils.render_sidebar() # <--- CHAMADA PARA A SIDEBAR UNIFICADA
 
-if not st.session_state.get('logged_in') or st.session_state.user_role != 'admin':
+# --- Verificação de Login e Permissão ---
+if not st.session_state.get('logged_in'):
+    st.error("Você precisa estar logado para acessar esta página.")
+    st.switch_page("app.py")
+
+if st.session_state.user_role != 'admin':
     st.error("Acesso restrito a administradores.")
-    st.page_link("app.py", label="Ir para Login")
-    st.stop()
+    st.switch_page("app.py")
 
 # --- Conexão com o Banco ---
 conn = db.conectar_db()
-st.title("Painel de Administração")
+st.title("🛠️ Painel de Administração")
 
 # --- Abas para Organização ---
-tab_gerenciar, tab_adicionar, tab_config_escala = st.tabs(["Gerenciar Usuários", "Adicionar Novo Usuário", "Configurações de Escala"])
+tab_gerenciar, tab_adicionar, tab_config_escala = st.tabs(["👥 Gerenciar Usuários", "➕ Adicionar Usuário", "⚙️ Configurar Escala"])
 
-# --- Aba de Gerenciamento (Edição e Exclusão) ---
+# ====================
+# ABA: Gerenciar Usuários
+# ====================
 with tab_gerenciar:
-    st.subheader("📋 Lista de Usuários Cadastrados")
-
+    st.subheader("👥 Lista de Usuários")
     try:
         df_usuarios = db.listar_voluntarios(conn)
-        
         if df_usuarios.empty:
-            st.info("Nenhum usuário cadastrado ainda.")
+            st.info("Nenhum usuário cadastrado.")
         else:
             st.dataframe(df_usuarios, use_container_width=True)
             st.markdown("---")
 
-            st.subheader("Ações para um Usuário Específico")
-            
-            # Usamos o mesmo DataFrame para evitar uma segunda chamada ao banco
             id_selecionado = st.selectbox(
-                "Selecione o usuário:",
+                "Selecione o usuário para editar/excluir:",
                 options=df_usuarios['id'],
-                format_func=lambda id: f"{df_usuarios.loc[df_usuarios['id'] == id, 'nome'].iloc[0]}",
-                key="selectbox_usuario_gerenciar"
+                format_func=lambda id: f"{df_usuarios.loc[df_usuarios['id'] == id, 'nome'].iloc[0]} (ID: {id})",
             )
-            
-            usuario_selecionado_row = db.get_voluntario_by_id(conn, id_selecionado)
-            
-            if usuario_selecionado_row:
-                usuario_selecionado = dict(usuario_selecionado_row)
 
-                # --- Formulário de Edição ---
-                with st.form("form_editar_usuario"):
-                    st.write(f"**Editando:** {usuario_selecionado['nome']}")
-                    
-                    nome = st.text_input("Nome", value=usuario_selecionado["nome"])
-                    usuario_login = st.text_input("Usuário (Login)", value=usuario_selecionado["usuario"])
-                    nova_senha = st.text_input("Nova Senha", type="password", placeholder="Deixe em branco para não alterar")
-                    st.text_input("Tipo de Acesso (Papel)", value=usuario_selecionado["role"].capitalize(), disabled=True)
+            usuario = dict(db.get_voluntario_by_id(conn, id_selecionado))
 
-                    atribuicoes_selecionadas = []
-                    disponibilidade_selecionada = []
+            with st.form("form_editar_usuario"):
+                st.write(f"✏️ Editando: **{usuario['nome']}**")
+                nome = st.text_input("Nome", value=usuario["nome"])
+                usuario_login = st.text_input("Usuário (Login)", value=usuario["usuario"])
+                nova_senha = st.text_input("Nova Senha (opcional)", type="password", placeholder="Deixe vazio para não alterar")
+                st.text_input("Papel", value=usuario["role"].capitalize(), disabled=True)
 
-                    if usuario_selecionado["role"] == "voluntario":
-                        st.write("**Atribuições:**")
-                        default_atribuicoes = [a.strip() for a in (usuario_selecionado.get("atribuicoes") or "").split(",") if a.strip()]
-                        cols_atr = st.columns(3)
-                        for i, atr in enumerate(utils.ATRIBUICOES_LISTA):
-                            with cols_atr[i % 3]:
-                                if st.checkbox(atr, value=(atr in default_atribuicoes), key=f"edit_atr_{atr}_{id_selecionado}"):
-                                    atribuicoes_selecionadas.append(atr)
-                        
-                        st.write("**Disponibilidade:**")
-                        default_disponibilidade = [d.strip() for d in (usuario_selecionado.get("disponibilidade") or "").split(",") if d.strip()]
-                        cols_disp = st.columns(3)
-                        for i, disp in enumerate(utils.DISPONIBILIDADE_OPCOES):
-                            with cols_disp[i % 3]:
-                                if st.checkbox(disp, value=(disp in default_disponibilidade), key=f"edit_disp_{disp}_{id_selecionado}"):
-                                    disponibilidade_selecionada.append(disp)
+                atribuicoes_selecionadas = []
+                disponibilidade_selecionada = []
+                if usuario["role"] == "voluntario":
+                    st.markdown("**Atribuições:**")
+                    default_atribuicoes = usuario["atribuicoes"].split(",") if usuario["atribuicoes"] else []
+                    for atr in utils.ATRIBUICOES_LISTA:
+                        # CORREÇÃO: Adicionada uma 'key' única para o checkbox
+                        if st.checkbox(atr, value=(atr in default_atribuicoes), key=f"edit_atr_{id_selecionado}_{atr}"):
+                            atribuicoes_selecionadas.append(atr)
 
-                    if st.form_submit_button("Salvar Alterações", type="primary"):
-                        senha_final = nova_senha if nova_senha else usuario_selecionado['senha']
-                        atribuicoes_str = ", ".join(atribuicoes_selecionadas)
-                        disponibilidade_str = ", ".join(disponibilidade_selecionada)
-                        db.editar_voluntario(conn, id_selecionado, nome, usuario_login, senha_final, atribuicoes_str, disponibilidade_str, role=usuario_selecionado['role'])
-                        st.success(f"Dados do usuário '{nome}' atualizados com sucesso!")
-                        st.rerun()
+                    st.markdown("**Disponibilidade:**")
+                    default_disponibilidade = usuario["disponibilidade"].split(",") if usuario["disponibilidade"] else []
+                    for disp in utils.DISPONIBILIDADE_OPCOES:
+                        # CORREÇÃO: Adicionada uma 'key' única para o checkbox
+                        if st.checkbox(disp, value=(disp in default_disponibilidade), key=f"edit_disp_{id_selecionado}_{disp}"):
+                            disponibilidade_selecionada.append(disp)
 
-                st.markdown("---")
+                if st.form_submit_button("💾 Salvar Alterações"):
+                    senha_final = nova_senha if nova_senha else usuario["senha"]
+                    db.editar_voluntario(
+                        conn, id_selecionado, nome, usuario_login, senha_final,
+                        ",".join(atribuicoes_selecionadas), ",".join(disponibilidade_selecionada), role=usuario["role"]
+                    )
+                    st.success(f"Usuário '{nome}' atualizado com sucesso!")
+                    st.rerun()
 
-                # --- Seção de Exclusão ---
-                if usuario_selecionado['role'] != 'admin':
-                    st.write(f"**Excluir:** {usuario_selecionado['nome']}")
-                    st.warning(f"Atenção: Esta ação é permanente.")
-                    if st.button(f"Confirmar Exclusão do Usuário", type="secondary"):
-                        db.excluir_voluntario(conn, id_selecionado)
-                        st.success(f"Usuário '{usuario_selecionado['nome']}' excluído.")
-                        st.rerun()
-                else:
-                    st.info("Não é possível excluir um usuário com o papel de Administrador.")
+            # Exclusão de Usuário
+            if usuario["role"] != "admin":
+                if st.button(f"🗑️ Excluir {usuario['nome']}", type="secondary"):
+                    db.excluir_voluntario(conn, id_selecionado)
+                    st.warning(f"Usuário '{usuario['nome']}' excluído.")
+                    st.rerun()
+            else:
+                st.info("O usuário Administrador principal não pode ser excluído.")
 
     except Exception as e:
-        st.error(f"Ocorreu um erro inesperado na aba Gerenciar Usuários: {e}")
+        st.error(f"Erro ao carregar usuários: {e}")
 
-
-# --- Aba de Adicionar Novo Usuário ---
+# ====================
+# ABA: Adicionar Novo Usuário
+# ====================
 with tab_adicionar:
-    st.subheader("➕ Adicionar Novo Usuário")
-    
-    with st.form("form_adicionar_usuario", clear_on_submit=True):
+    st.subheader("➕ Adicionar Usuário")
+    with st.form("form_add_usuario", clear_on_submit=True):
         nome = st.text_input("Nome Completo")
-        usuario = st.text_input("Nome de Usuário (Login)")
+        usuario_login = st.text_input("Usuário (Login)")
         senha = st.text_input("Senha Provisória", type="password")
-        role_selecionado = st.selectbox("Tipo de Usuário", options=["voluntario", "admin"])
-
-        st.markdown("---")
-        atribuicoes_selecionadas = []
-        disponibilidade_selecionada = []
-
-        if role_selecionado == "voluntario":
-            st.write("**Atribuições do Voluntário:**")
-            cols_atr_add = st.columns(3)
-            for i, atr in enumerate(utils.ATRIBUICOES_LISTA):
-                with cols_atr_add[i % 3]:
-                    if st.checkbox(atr, key=f"add_atr_{i}"):
-                        atribuicoes_selecionadas.append(atr)
-            
-            st.write("**Disponibilidade Geral:**")
-            cols_disp_add = st.columns(3)
-            for i, disp in enumerate(utils.DISPONIBILIDADE_OPCOES):
-                with cols_disp_add[i % 3]:
-                    if st.checkbox(disp, key=f"add_disp_{i}"):
-                        disponibilidade_selecionada.append(disp)
+        role = st.selectbox("Tipo de Usuário", ["voluntario", "admin"])
         
-        if st.form_submit_button("Cadastrar Usuário", type="primary"):
-            if nome and usuario and senha:
+        atribuicoes = []
+        disponibilidade = []
+        if role == "voluntario":
+            st.markdown("**Atribuições:**")
+            for atr in utils.ATRIBUICOES_LISTA:
+                if st.checkbox(atr, key=f"add_atr_{atr}"):
+                    atribuicoes.append(atr)
+
+            st.markdown("**Disponibilidade:**")
+            for disp in utils.DISPONIBILIDADE_OPCOES:
+                if st.checkbox(disp, key=f"add_disp_{disp}"):
+                    disponibilidade.append(disp)
+
+        if st.form_submit_button("➕ Cadastrar"):
+            if nome and usuario_login and senha:
                 try:
-                    db.adicionar_voluntario(conn, nome, usuario, senha, ", ".join(atribuicoes_selecionadas), ", ".join(disponibilidade_selecionada), role=role_selecionado)
-                    st.success(f"Usuário '{nome}' ({role_selecionado.capitalize()}) cadastrado com sucesso!")
+                    db.adicionar_voluntario(
+                        conn, nome, usuario_login, senha,
+                        ",".join(atribuicoes), ",".join(disponibilidade), role
+                    )
+                    st.success(f"Usuário '{nome}' cadastrado com sucesso!")
                     st.rerun()
                 except sqlite3.IntegrityError:
-                    st.error(f"O nome de usuário '{usuario}' já existe. Por favor, escolha outro.")
+                    st.error(f"O nome de usuário '{usuario_login}' já existe.")
                 except Exception as e:
-                    st.error(f"Ocorreu um erro: {e}")
+                    st.error(f"Erro ao cadastrar: {e}")
             else:
-                st.error("Nome, Usuário (Login) e Senha Provisória são campos obrigatórios.")
+                st.error("Nome, Usuário e Senha são campos obrigatórios.")
 
 
-# --- Aba: Configurações de Escala (Mantida da sua versão) ---
+# ====================
+# ABA: Configurações de Escala (Mantida da sua versão)
+# ====================
 with tab_config_escala:
-    st.subheader("⚙️ Configurações de Edição de Escala")
+    st.subheader("⚙️ Configurações da Escala")
+    _, mes_ref = utils.get_dias_culto_proximo_mes()
+    edicao_liberada = db.get_edicao_liberada(conn, mes_ref)
     
-    _, mes_ref_proximo_mes = utils.get_dias_culto_proximo_mes()
-    edicao_liberada_atual = db.get_edicao_liberada(conn, mes_ref_proximo_mes)
+    status_texto = '✅ Liberada' if edicao_liberada else '❌ Bloqueada'
+    st.write(f"**Edição para {mes_ref}:** {status_texto}")
 
-    st.write(f"**Status de Edição para {mes_ref_proximo_mes}:**")
-    status_display = "LIBERADA" if edicao_liberada_atual else "BLOQUEADA"
-    st.info(f"Atualmente a edição de indisponibilidade está **{status_display}**.")
+    liberar = st.radio("Alterar Status:", ["Liberar Edição", "Bloquear Edição"], index=0 if edicao_liberada else 1)
 
-    nova_situacao = st.radio(
-        "Deseja liberar ou bloquear as edições para este mês?",
-        ["Liberar Edição", "Bloquear Edição"],
-        index=0 if edicao_liberada_atual else 1
-    )
-
-    if st.button("Salvar Configuração", type="primary"):
-        status_to_save = (nova_situacao == "Liberar Edição")
-        if db.set_edicao_liberada(conn, mes_ref_proximo_mes, status_to_save):
-            st.success(f"Status de edição para {mes_ref_proximo_mes} atualizado para **{nova_situacao.upper().split(' ')[0]}**.")
-            st.rerun()
-        else:
-            st.error("Erro ao atualizar o status de edição.")
+    if st.button("Salvar Configuração"):
+        status = liberar == "Liberar Edição"
+        db.set_edicao_liberada(conn, mes_ref, status)
+        st.success("Configuração atualizada!")
+        st.rerun()
 
     st.markdown("---")
-    st.subheader("📋 Resumo das Indisponibilidades Enviadas")
-    st.info("Aqui você pode ver as indisponibilidades informadas pelos voluntários.")
-
-    meses_configurados_rows = db.get_all_meses_configurados(conn)
-    meses_disponiveis = [m['mes_referencia'] for m in meses_configurados_rows]
-
-    if meses_disponiveis:
-        mes_selecionado = st.selectbox(
-            "Selecione o mês para visualizar as indisponibilidades:",
-            options=meses_disponiveis,
-            index=meses_disponiveis.index(mes_ref_proximo_mes) if mes_ref_proximo_mes in meses_disponiveis else 0
-        )
-        if mes_selecionado:
-            indisponibilidades_rows = db.get_all_voluntarios_indisponibilidade_for_month(conn, mes_selecionado)
-            if indisponibilidades_rows:
-                st.write(f"**Indisponibilidades para {mes_selecionado}:**")
-                df_indisponibilidades = pd.DataFrame([dict(row) for row in indisponibilidades_rows])
-                df_indisponibilidades.columns = ['Voluntário', 'Datas de Restrição', 'Serviu Ceia Mês Passado']
-                st.dataframe(df_indisponibilidades, use_container_width=True)
-            else:
-                st.info(f"Nenhum voluntário informou indisponibilidade para {mes_selecionado} ainda.")
+    st.subheader("📋 Resumo de Indisponibilidades")
+    meses = [m["mes_referencia"] for m in db.get_all_meses_configurados(conn)]
+    
+    if meses:
+        mes_selecionado = st.selectbox("Selecione o mês:", sorted(list(set(meses))))
+        df_indisponibilidades = db.listar_indisponibilidades_por_mes(conn, mes_selecionado)
+        
+        if not df_indisponibilidades.empty:
+            df_indisponibilidades.columns = ['ID Voluntário', 'Voluntário', 'Datas de Restrição', 'Serviu Ceia']
+            st.dataframe(df_indisponibilidades[['Voluntário', 'Datas de Restrição', 'Serviu Ceia']], use_container_width=True)
+        else:
+            st.info(f"Nenhuma indisponibilidade registrada para {mes_selecionado}.")
     else:
-        st.info("Nenhum mês de escala configurado ainda.")
-
-
-# --- Botão de Logout na Barra Lateral ---
-if st.sidebar.button("Logout"):
-    for key in st.session_state.keys():
-        del st.session_state[key]
-    conn.close()
-    st.switch_page("app.py")
+        st.info("Nenhum mês configurado ainda.")

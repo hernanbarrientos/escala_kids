@@ -6,6 +6,7 @@ from dateutil.relativedelta import relativedelta
 import calendar
 from collections import defaultdict
 import bcrypt 
+import streamlit as st
 
 # --- CONSTANTES DA APLICAÇÃO ---
 ATRIBUICOES_LISTA = [
@@ -84,3 +85,46 @@ def check_password(password, hashed_password):
     except ValueError:
         # Lida com casos onde o hash armazenado pode estar malformado
         return False
+    
+def render_sidebar():
+    """
+    Cria a barra lateral de navegação e ESCONDE A SIDEBAR NATIVA do Streamlit.
+    """
+    with st.sidebar:
+        # --- CORREÇÃO: Injeta CSS para esconder a navegação automática ---
+        st.markdown(
+            """
+            <style>
+                [data-testid="stSidebarNav"] {
+                    display: none;
+                }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+
+        # O restante da sua função permanece exatamente o mesmo
+        st.title("Ministério Kids")
+        st.markdown("---")
+
+        if st.session_state.get("logged_in"):
+            st.write(f"Bem-vindo(a), **{st.session_state.voluntario_info['nome']}**!")
+            
+            if st.session_state.user_role == 'admin':
+                st.header("Menu do Administrador")
+                # Usando os nomes de arquivo que você definiu
+                st.page_link("pages/painel_admin.py", label="Administração", icon="🛠️")
+                st.page_link("pages/gerar_escala.py", label="Gerar Escala", icon="🗓️")
+            else: # 'voluntario'
+                st.header("Menu do Voluntário")
+                st.page_link("pages/painel_voluntario.py", label="Meu Painel", icon="👤")
+
+            st.page_link("pages/alterar_senha.py", label="Alterar Senha", icon="🔑")
+
+            st.markdown("---")
+            if st.button("Logout", type="secondary", use_container_width=True):
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                st.switch_page("app.py")
+        else:
+            st.info("Faça o login para acessar o sistema.")

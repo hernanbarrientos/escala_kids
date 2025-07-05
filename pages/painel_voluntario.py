@@ -3,13 +3,19 @@ import database as db
 import utils
 
 st.set_page_config(page_title="Portal do Voluntário", layout="wide")
+utils.render_sidebar()
 
-# --- VERIFICAÇÃO DE LOGIN (AUTH GUARD) ---
 if not st.session_state.get('logged_in') or st.session_state.user_role != 'voluntario':
     st.error("Você precisa estar logado como voluntário para acessar esta página.")
-    if st.button("Ir para Login"):
-        st.switch_page("app.py")
+    st.page_link("app.py", label="Ir para Login")
     st.stop()
+
+# --- VERIFICAÇÃO DE LOGIN (AUTH GUARD) ---
+# if not st.session_state.get('logged_in') or st.session_state.user_role != 'voluntario':
+#     st.error("Você precisa estar logado como voluntário para acessar esta página.")
+#     if st.button("Ir para Login"):
+#         st.switch_page("app.py")
+#     st.stop()
 
 # --- CONTEÚDO DA PÁGINA ---
 conn = db.conectar_db()
@@ -89,10 +95,10 @@ if st.button("Enviar Indisponibilidade", type="primary", disabled=not edicao_lib
         st.error("Ocorreu um erro ao registrar/atualizar sua indisponibilidade.")
 
 
-if st.sidebar.button("Logout"):
-    for key in st.session_state.keys():
-        del st.session_state[key]
-    conn.close()
-    st.switch_page("app.py")
+# if st.sidebar.button("Logout"):
+#     for key in st.session_state.keys():
+#         del st.session_state[key]
+#     conn.close()
+#     st.switch_page("app.py")
 
 conn.close() # Garante que a conexão seja fechada ao final da execução do script

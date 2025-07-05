@@ -11,6 +11,7 @@ import utils
 from escala_config import NECESSIDADES_ESCALA
 
 st.set_page_config(page_title="Gerar Escala", layout="wide")
+utils.render_sidebar()
 
 # --- VERIFICAÇÃO DE LOGIN (AUTH GUARD) ---
 if not st.session_state.get('logged_in') or st.session_state.user_role != 'admin':
@@ -155,7 +156,7 @@ if st.button("Gerar Nova Escala", type="primary"):
 
 
 
-if st.sidebar.button("Logout"):
-    for key in st.session_state.keys():
-        del st.session_state[key]
-    st.switch_page("app.py")
+# if st.sidebar.button("Logout"):
+#     for key in st.session_state.keys():
+#         del st.session_state[key]
+#     st.switch_page("app.py")

@@ -1,12 +1,14 @@
 # pages/alterar_senha.py
 import streamlit as st
 import database as db
+import utils
 
 st.set_page_config(page_title="Alterar Senha", layout="centered")
+utils.render_sidebar()
 
 # --- VERIFICAÇÃO DE LOGIN E STATUS DE PRIMEIRO ACESSO ---
 if not st.session_state.get('logged_in') or st.session_state.get('voluntario_info', {}).get('primeiro_acesso') != 1:
-    st.error("Esta página é acessível apenas durante o primeiro login.")
+    st.error("Para mudar a senha, entre em contato com o administrador")
     st.page_link("app.py", label="Ir para a página de Login")
     st.stop()
 
