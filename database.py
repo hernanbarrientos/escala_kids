@@ -59,7 +59,17 @@ def criar_tabelas(conn):
         conn.commit()
         print("Usuário 'admin' criado com sucesso com a senha 'admin123'.")
 
-# ... (Mantenha todas as suas outras funções como estão) ...
+    # --- NOVA TABELA PARA ARMAZENAR A ESCALA FINAL E EXIBIR PARA O VOLUNTÁRIO ---
+    c.execute('''CREATE TABLE IF NOT EXISTS escala_gerada (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mes_referencia TEXT NOT NULL,
+        data_culto TEXT NOT NULL,
+        funcao TEXT NOT NULL,
+        voluntario_id INTEGER,
+        voluntario_nome TEXT,
+        FOREIGN KEY(voluntario_id) REFERENCES voluntarios(id)
+    )''')
+    conn.commit()
 
 def adicionar_voluntario(conn, nome, usuario, senha, atribuicoes, disponibilidade, role='voluntario'):
     c = conn.cursor()
@@ -189,3 +199,46 @@ def get_all_meses_configurados(conn):
     c = conn.cursor()
     c.execute("SELECT mes_referencia FROM configuracoes_escalas ORDER BY mes_referencia DESC")
     return c.fetchall()
+
+# --- NOVAS FUNÇÕES PARA GERENCIAR A ESCALA SALVA ---
+
+def salvar_escala_gerada(conn, mes_referencia, escala_df_pronto):
+    """Apaga a escala antiga do mês e salva a nova que já vem pronta."""
+    c = conn.cursor()
+    try:
+        # Apaga qualquer escala existente para este mês para evitar duplicatas
+        c.execute("DELETE FROM escala_gerada WHERE mes_referencia = ?", (mes_referencia,))
+        
+        # O DataFrame já vem com a coluna 'mes_referencia', então apenas o inserimos
+        escala_df_pronto.to_sql('escala_gerada', conn, if_exists='append', index=False)
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar escala gerada: {e}")
+        conn.rollback()
+        return False
+
+def get_escala_por_voluntario(conn, voluntario_id):
+    """Busca no banco todas as datas que um voluntário específico foi escalado."""
+    query = """
+        SELECT data_culto, funcao
+        FROM escala_gerada
+        WHERE voluntario_id = ?
+        ORDER BY data_culto
+    """
+    return pd.read_sql_query(query, conn, params=(voluntario_id,))
+
+def verificar_existencia_escala(conn, mes_referencia):
+    """Verifica se já existe uma escala salva para o mês de referência."""
+    c = conn.cursor()
+    c.execute("SELECT 1 FROM escala_gerada WHERE mes_referencia = ? LIMIT 1", (mes_referencia,))
+    return c.fetchone() is not None
+
+def listar_escala_completa_por_mes(conn, mes_referencia):
+    """Busca a escala completa de um mês para o editor."""
+    return pd.read_sql_query(
+        "SELECT data_culto, funcao, voluntario_nome FROM escala_gerada WHERE mes_referencia = ?",
+        conn,
+        params=(mes_referencia,)
+    )

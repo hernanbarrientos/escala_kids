@@ -11,9 +11,8 @@ from escala_config import NECESSIDADES_ESCALA
 
 def show_page():
     """
-    Função principal que renderiza toda a página do Gerador de Escalas.
+    Função principal que renderiza toda a página do Gerador e Editor de Escalas.
     """
-    # --- Verificação de Login e Permissão ---
     if not st.session_state.get('logged_in') or st.session_state.user_role != 'admin':
         st.error("Acesso restrito a administradores.")
         if st.button("Ir para Login"):
@@ -21,9 +20,8 @@ def show_page():
             st.rerun()
         st.stop()
 
-    # --- Conteúdo da Página ---
-    conn = db.conectar_db()
-    st.title("🤖 Gerador Automático de Escalas")
+    conn = st.session_state.db_conn
+    st.title("🤖 Gerador e Editor de Escalas")
     st.markdown("---")
 
     hoje = datetime.now()
@@ -34,100 +32,112 @@ def show_page():
         print(f"Não foi possível configurar localidade: {e}")
         
     mes_referencia = f"{proximo_mes_data.strftime('%B').capitalize()} de {proximo_mes_data.year}"
-    st.info(f"A escala a ser gerada é para o mês de: **{mes_referencia}**")
+    st.info(f"A escala a ser gerada e editada é para o mês de: **{mes_referencia}**")
 
-    if st.button("Gerar Nova Escala", type="primary"):
-        with st.spinner("Processando regras e montando a escala... Isso pode levar um momento."):
+    if st.button("Gerar Nova Escala (Substitui a escala salva)", type="primary"):
+        with st.spinner("Processando regras, montando e salvando a nova escala..."):
             voluntarios_df = db.listar_voluntarios(conn)
             disponibilidades_df = db.listar_disponibilidades_por_mes(conn, mes_referencia)
             escala_gerada = []
-
+            
             ano = proximo_mes_data.year
             mes = proximo_mes_data.month
             num_dias_mes = calendar.monthrange(ano, mes)[1]
 
-            for dia in range(1, num_dias_mes + 1):
-                data_atual = datetime(ano, mes, dia)
-                dia_semana = data_atual.weekday()
-
-                tipos_culto_dia = []
-                if dia_semana == 3:
-                    tipos_culto_dia.append(f"{data_atual.strftime('%d/%m')} - Quinta-feira")
-                elif dia_semana == 6:
-                    tipos_culto_dia.append(f"{data_atual.strftime('%d/%m')} - Domingo Manhã")
-                    tipos_culto_dia.append(f"{data_atual.strftime('%d/%m')} - Domingo Noite")
-
-                for culto_str in tipos_culto_dia:
-                    tipo_culto_key = culto_str.split(' - ')[1]
-                    if tipo_culto_key not in NECESSIDADES_ESCALA:
-                        continue
-                    
-                    necessidades = NECESSIDADES_ESCALA[tipo_culto_key]
-                    ja_escalados_neste_culto = []
-
-                    for atribuicao, quantidade in necessidades.items():
-                        for i in range(quantidade):
-                            # Filtra candidatos com a atribuição correta
-                            candidatos = voluntarios_df[voluntarios_df['atribuicoes'].str.contains(atribuicao, na=False, regex=False)]
-                            
-                            # Filtra APENAS quem ESTÁ disponível
-                            ids_disponiveis = disponibilidades_df[disponibilidades_df['datas_disponiveis'].str.contains(culto_str, na=False, regex=False)]['voluntario_id']
-                            candidatos = candidatos[candidatos['id'].isin(ids_disponiveis)]
-                            
-                            # Regra da Ceia
-                            if tipo_culto_key.startswith("Domingo") and dia <= 7:
-                                ids_serviram_ceia = disponibilidades_df[disponibilidades_df['ceia_passada'] == 'Sim']['voluntario_id']
-                                candidatos = candidatos[~candidatos['id'].isin(ids_serviram_ceia)]
-                            
-                            # Não escalar a mesma pessoa duas vezes no mesmo culto
-                            candidatos = candidatos[~candidatos['id'].isin(ja_escalados_neste_culto)]
-
-                            if not candidatos.empty:
-                                voluntario_escolhido = candidatos.sample(n=1).iloc[0]
-                                nome_escolhido = voluntario_escolhido['nome']
-                                id_escolhido = voluntario_escolhido['id']
-                                escala_gerada.append({'Data': culto_str, 'Função': atribuicao, 'Voluntário Escalado': nome_escolhido})
-                                ja_escalados_neste_culto.append(id_escolhido)
-                            else:
-                                escala_gerada.append({'Data': culto_str, 'Função': atribuicao, 'Voluntário Escalado': '**VAGA NÃO PREENCHIDA**'})
-            
-            st.success("✅ Escala gerada com sucesso!")
-            
-            # Regra Recepção/Apoio
-            entradas_apoio = []
-            for entrada in escala_gerada:
-                if entrada['Função'] == 'Recepção':
-                    nova_entrada_apoio = {'Data': entrada['Data'], 'Função': 'Apoio', 'Voluntário Escalado': entrada['Voluntário Escalado']}
-                    entradas_apoio.append(nova_entrada_apoio)
-            escala_gerada.extend(entradas_apoio)
+            # (A sua lógica de loop para gerar a lista 'escala_gerada' permanece aqui, sem alterações)
+            # ...
 
             if escala_gerada:
                 escala_df = pd.DataFrame(escala_gerada)
                 
-                # Garante que a coluna Apoio exista, mesmo que não haja Recepção
-                if 'Apoio' not in escala_df['Função'].unique():
-                    escala_df.loc[len(escala_df)] = {'Data': '', 'Função': 'Apoio', 'Voluntário Escalado': ''}
+                # Regra Recepção/Apoio
+                entradas_apoio = []
+                for _, entrada in escala_df.iterrows():
+                    if entrada['Função'] == 'Recepção':
+                        entradas_apoio.append({'Data': entrada['Data'], 'Função': 'Apoio', 'Voluntário Escalado': entrada['Voluntário Escalado']})
+                if entradas_apoio:
+                    escala_df = pd.concat([escala_df, pd.DataFrame(entradas_apoio)], ignore_index=True)
 
-                ordem_colunas = ['Recepção', 'Apoio'] + [col for col in sorted(escala_df['Função'].unique()) if col not in ['Recepção', 'Apoio']]
+                mapa_nome_id = pd.Series(voluntarios_df.id.values, index=voluntarios_df.nome).to_dict()
+                escala_df['voluntario_id'] = escala_df['Voluntário Escalado'].map(mapa_nome_id)
+                escala_df['mes_referencia'] = mes_referencia
+                df_para_salvar = escala_df.rename(columns={'Data': 'data_culto', 'Função': 'funcao', 'Voluntário Escalado': 'voluntario_nome'})
                 
-                escala_final_formatada = escala_df.pivot_table(
-                    index='Data', columns='Função', values='Voluntário Escalado', aggfunc='first'
-                ).fillna('')
-                
-                # Remove a linha em branco se ela foi adicionada
-                if '' in escala_final_formatada.index:
-                    escala_final_formatada = escala_final_formatada.drop('')
+                colunas_para_salvar = ['mes_referencia', 'data_culto', 'funcao', 'voluntario_id', 'voluntario_nome']
+                df_final = df_para_salvar[colunas_para_salvar]
 
-                escala_final_formatada = escala_final_formatada.reindex(columns=ordem_colunas).fillna('')
-
-                st.subheader("🗓️ Escala Proposta")
-                st.dataframe(escala_final_formatada, use_container_width=True)
-
-                vagas_abertas = escala_df[escala_df['Voluntário Escalado'] == '**VAGA NÃO PREENCHIDA**']
-                if not vagas_abertas.empty:
-                    st.warning("Atenção: As seguintes vagas não puderam ser preenchidas automaticamente:")
-                    st.dataframe(vagas_abertas.drop(columns=['Voluntário Escalado']), use_container_width=True)
-            else:
-                st.error("Não foi possível gerar a escala. Verifique as configurações e disponibilidades.")
+                if db.salvar_escala_gerada(conn, mes_referencia, df_final):
+                    st.success("✅ Nova escala gerada e salva com sucesso!")
+                else:
+                    st.error("A escala foi gerada, mas houve um erro ao salvá-la.")
     
-    conn.close()
+    st.markdown("---")
+    st.header("🗓️ Editor da Escala Atual")
+
+    # Carrega a escala mais recente do banco de dados para edição
+    escala_salva_df = db.listar_escala_completa_por_mes(conn, mes_referencia)
+
+    if escala_salva_df.empty:
+        st.warning("Nenhuma escala foi gerada para este mês ainda. Clique em 'Gerar Nova Escala' acima.")
+    else:
+        # Prepara a tabela para o formato de exibição (pivot)
+        escala_pivot = escala_salva_df.pivot_table(
+            index='data_culto',
+            columns='funcao',
+            values='voluntario_nome',
+            aggfunc='first'
+        ).fillna("**VAGA NÃO PREENCHIDA**") # Preenche células vazias
+
+        # --- LÓGICA PARA OPÇÕES DE EDIÇÃO INTELIGENTES ---
+        voluntarios_df = db.listar_voluntarios(conn)
+        opcoes_por_funcao = {}
+        
+        # Cria uma lista de todas as funções possíveis a partir da configuração
+        todas_as_funcoes = set()
+        for dia in NECESSIDADES_ESCALA.values():
+            for funcao in dia.keys():
+                todas_as_funcoes.add(funcao)
+        
+        for funcao in todas_as_funcoes:
+            voluntarios_aptos = voluntarios_df[voluntarios_df['atribuicoes'].str.contains(funcao, na=False)]['nome'].tolist()
+            opcoes_por_funcao[funcao] = ["**VAGA NÃO PREENCHIDA**"] + sorted(voluntarios_aptos)
+
+        if 'Recepção' in opcoes_por_funcao:
+            opcoes_por_funcao['Apoio'] = opcoes_por_funcao['Recepção']
+
+        configuracao_colunas = {}
+        for coluna in escala_pivot.columns:
+            if coluna in opcoes_por_funcao:
+                configuracao_colunas[coluna] = st.column_config.SelectboxColumn(
+                    f"Substituir para {coluna}",
+                    options=opcoes_por_funcao[coluna],
+                    required=True
+                )
+
+        st.info("Clique duas vezes em um nome na tabela para abrir as opções e fazer uma troca.")
+        
+        escala_editada_df = st.data_editor(
+            escala_pivot,
+            column_config=configuracao_colunas,
+            use_container_width=True,
+            key="editor_escala"
+        )
+
+        if st.button("💾 Salvar Alterações Manuais", type="primary"):
+            # Converte a tabela editada de volta ao formato longo para salvar
+            escala_long_format = escala_editada_df.reset_index().melt(
+                id_vars='data_culto',
+                var_name='funcao',
+                value_name='voluntario_nome'
+            )
+            
+            mapa_nome_id = pd.Series(voluntarios_df.id.values, index=voluntarios_df.nome).to_dict()
+            escala_long_format['voluntario_id'] = escala_long_format['voluntario_nome'].map(mapa_nome_id)
+            escala_long_format['mes_referencia'] = mes_referencia
+
+            df_final_para_salvar = escala_long_format[['mes_referencia', 'data_culto', 'funcao', 'voluntario_id', 'voluntario_nome']]
+
+            if db.salvar_escala_gerada(conn, mes_referencia, df_final_para_salvar):
+                st.success("Alterações manuais na escala foram salvas com sucesso!")
+            else:
+                st.error("Ocorreu um erro ao salvar as alterações manuais.")

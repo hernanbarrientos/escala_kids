@@ -47,7 +47,7 @@ def show_page():
                 id_selecionado = st.selectbox(
                     "Selecione o usuário:",
                     options=df_usuarios['id'],
-                    format_func=lambda id: f"{df_usuarios.loc[df_usuarios['id'] == id, 'nome'].iloc[0]} (ID: {id})",
+                    format_func=lambda id: f"{df_usuarios.loc[df_usuarios['id'] == id, 'nome'].iloc[0]}",
                     key="selectbox_usuario_gerenciar"
                 )
                 

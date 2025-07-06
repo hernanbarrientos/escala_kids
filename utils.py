@@ -111,6 +111,9 @@ def render_sidebar():
                 if st.button("Meu Painel", use_container_width=True, type="primary" if st.session_state.page == "painel_voluntario" else "secondary"):
                     st.session_state.page = "painel_voluntario"
                     st.rerun()
+                if st.button("Ver Minha Escala", use_container_width=True, type="primary" if st.session_state.page == "minha_escala" else "secondary"):
+                    st.session_state.page = "minha_escala"
+                    st.rerun()
 
             if st.button("Alterar Senha", use_container_width=True, type="primary" if st.session_state.page == "alterar_senha" else "secondary"):
                 st.session_state.page = "alterar_senha"
@@ -118,10 +121,11 @@ def render_sidebar():
 
             st.markdown("---")
             if st.button("Logout", use_container_width=True):
-                keys_to_keep = ['page']
-                for key in list(st.session_state.keys()):
-                    if key not in keys_to_keep: del st.session_state[key]
-                st.session_state.logged_in = False
+                # Limpa apenas as informações do usuário, mantendo a conexão
+                keys_to_clear = ['logged_in', 'user_role', 'voluntario_info']
+                for key in keys_to_clear:
+                    if key in st.session_state:
+                        del st.session_state[key]
                 st.session_state.page = "login"
                 st.rerun()
         else:
