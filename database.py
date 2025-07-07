@@ -78,8 +78,9 @@ def criar_tabelas(conn):
         voluntario_id INTEGER NOT NULL,
         voluntario_nome TEXT NOT NULL,
         data_culto TEXT NOT NULL,
+        funcao TEXT NOT NULL, -- <<< COLUNA ADICIONADA
         comentario TEXT NOT NULL,
-        status TEXT DEFAULT 'novo', -- 'novo', 'boa_ideia', 'lixeira'
+        status TEXT DEFAULT 'novo',
         timestamp_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(voluntario_id) REFERENCES voluntarios(id)
     )''')
@@ -271,14 +272,15 @@ def get_contagem_servicos_passados(conn, mes_referencia_atual):
     """
     return pd.read_sql_query(query, conn, params=(mes_referencia_atual,))
 
-def salvar_feedback(conn, voluntario_id, voluntario_nome, data_culto, comentario):
-    """Salva um novo feedback no banco de dados."""
+def salvar_feedback(conn, voluntario_id, voluntario_nome, data_culto, funcao, comentario):
+    """Salva um novo feedback no banco de dados, incluindo a função."""
     try:
         c = conn.cursor()
+        # Adicionada a coluna 'funcao' na inserção
         c.execute("""
-            INSERT INTO feedbacks (voluntario_id, voluntario_nome, data_culto, comentario)
-            VALUES (?, ?, ?, ?)
-        """, (voluntario_id, voluntario_nome, data_culto, comentario))
+            INSERT INTO feedbacks (voluntario_id, voluntario_nome, data_culto, funcao, comentario)
+            VALUES (?, ?, ?, ?, ?)
+        """, (voluntario_id, voluntario_nome, data_culto, funcao, comentario))
         conn.commit()
         return True
     except Exception as e:
@@ -308,8 +310,8 @@ def atualizar_status_feedback(conn, feedback_id, novo_status):
         conn.rollback()
         return False
 
-def feedback_ja_enviado(conn, voluntario_id, data_culto):
-    """Verifica se um voluntário já enviou feedback para um culto específico."""
+def feedback_ja_enviado(conn, voluntario_id, data_culto, funcao):
+    """Verifica se um voluntário já enviou feedback para um culto e função específicos."""
     c = conn.cursor()
-    c.execute("SELECT 1 FROM feedbacks WHERE voluntario_id = ? AND data_culto = ?", (voluntario_id, data_culto))
+    c.execute("SELECT 1 FROM feedbacks WHERE voluntario_id = ? AND data_culto = ? AND funcao = ?", (voluntario_id, data_culto, funcao))
     return c.fetchone() is not None

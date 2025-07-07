@@ -5,7 +5,7 @@ import database as db
 from datetime import datetime
 
 def show_page():
-    # --- Verificação de Login ---
+    # --- Verificação de Login e Permissão ---
     if not st.session_state.get('logged_in') or st.session_state.user_role != 'voluntario':
         st.error("Você precisa estar logado como voluntário para acessar esta página.")
         if st.button("Ir para Login"):
@@ -17,16 +17,18 @@ def show_page():
     conn = st.session_state.db_conn
     voluntario_info = st.session_state.voluntario_info
     
+    if 'disponibilidade_salva_sucesso' in st.session_state and st.session_state.disponibilidade_salva_sucesso:
+        st.success("✅ Sua disponibilidade foi registrada/atualizada com sucesso!")
+        del st.session_state.disponibilidade_salva_sucesso
+
+    nome_voluntario = voluntario_info.get("nome", "Voluntário")
     st.title(f"🗓️ Minha Escala")
-    st.write(f"Olá, **{voluntario_info['nome']}**! Aqui estão os seus compromissos e a oportunidade de deixar seu feedback.")
+    st.write(f"Olá, **{nome_voluntario}**! Aqui estão os seus compromissos e a oportunidade de deixar seu feedback.")
     st.markdown("---")
 
-    # --- AJUSTE PARA TESTE ---
-    # Adicionamos um checkbox para ativar/desativar o modo de teste
     with st.expander("Opções de Teste (Apenas para desenvolvimento)"):
         modo_teste = st.checkbox("Ativar modo de teste de feedback (trata todas as escalas como passadas)")
     st.markdown("---")
-    # -------------------------
 
     try:
         minha_escala_df = db.get_escala_por_voluntario(conn, voluntario_info['id'])
@@ -34,23 +36,18 @@ def show_page():
         if minha_escala_df.empty:
             st.info("Você ainda não foi escalado(a) para nenhuma data.")
         else:
-            # Converte a coluna de data para o formato datetime para comparação
             minha_escala_df['data_culto_dt'] = pd.to_datetime(minha_escala_df['data_culto'].str.split(' - ').str[0], format='%d/%m')
             hoje = datetime.now()
             minha_escala_df['data_culto_dt'] = minha_escala_df['data_culto_dt'].apply(
                 lambda dt: dt.replace(year=hoje.year + 1) if dt.month < hoje.month else dt.replace(year=hoje.year)
             )
 
-            # --- LÓGICA DE TESTE APLICADA AQUI ---
             if modo_teste:
-                # Se o modo de teste estiver ativo, todas as escalas são consideradas "passadas"
                 escalas_futuras = pd.DataFrame()
                 escalas_passadas = minha_escala_df
             else:
-                # Comportamento normal da aplicação
                 escalas_futuras = minha_escala_df[minha_escala_df['data_culto_dt'].dt.date >= hoje.date()]
                 escalas_passadas = minha_escala_df[minha_escala_df['data_culto_dt'].dt.date < hoje.date()]
-            # ------------------------------------
 
             st.subheader("Próximas Escalas")
             if not escalas_futuras.empty:
@@ -71,16 +68,21 @@ def show_page():
                     funcao = linha['funcao']
                     
                     with st.expander(f"**{data_culto}** - Função: **{funcao}**"):
-                        feedback_enviado = db.feedback_ja_enviado(conn, voluntario_info['id'], data_culto)
+                        feedback_ja_enviado = db.feedback_ja_enviado(conn, voluntario_info['id'], data_culto, funcao) # Ajustado para incluir a função
                         
-                        if feedback_enviado:
-                            st.success("✔️ Você já enviou seu feedback para este dia. Obrigado!")
+                        if feedback_ja_enviado:
+                            st.success("✔️ Você já enviou seu feedback para esta escala específica. Obrigado!")
                         else:
-                            with st.form(key=f"form_{data_culto}"):
-                                comentario = st.text_area("Deixe seu comentário, sugestão ou ponto de melhoria:", key=f"comment_{data_culto}", height=150)
+                            # --- CORREÇÃO DEFINITIVA APLICADA AQUI ---
+                            # A chave do formulário agora inclui a data E a função, tornando-a única.
+                            form_key = f"form_{data_culto}_{funcao}".replace(" ", "_") # Remove espaços para uma chave mais segura
+                            
+                            with st.form(key=form_key):
+                                comentario = st.text_area("Deixe seu comentário, sugestão ou ponto de melhoria:", key=f"comment_{form_key}", height=150)
                                 if st.form_submit_button("Enviar Feedback"):
                                     if comentario:
-                                        if db.salvar_feedback(conn, voluntario_info['id'], voluntario_info['nome'], data_culto, comentario):
+                                        # Ajuste na função de salvar para incluir a função também
+                                        if db.salvar_feedback(conn, voluntario_info['id'], voluntario_info['nome'], data_culto, funcao, comentario):
                                             st.success("Seu feedback foi enviado com sucesso!")
                                             st.rerun()
                                         else:
