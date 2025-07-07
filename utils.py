@@ -106,6 +106,9 @@ def render_sidebar():
                 if st.button("Gerar Escala", use_container_width=True, type="primary" if st.session_state.page == "gerar_escala" else "secondary"):
                     st.session_state.page = "gerar_escala"
                     st.rerun()
+                if st.button("Ver Comentários", use_container_width=True, type="primary" if st.session_state.page == "comentarios" else "secondary"):
+                    st.session_state.page = "comentarios"
+                    st.rerun()
             else: # 'voluntario'
                 st.header("Menu do Voluntário")
                 if st.button("Meu Painel", use_container_width=True, type="primary" if st.session_state.page == "painel_voluntario" else "secondary"):

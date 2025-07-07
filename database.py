@@ -71,6 +71,21 @@ def criar_tabelas(conn):
     )''')
     conn.commit()
 
+    
+    # --- NOVA TABELA PARA FEEDBACKS ---
+    c.execute('''CREATE TABLE IF NOT EXISTS feedbacks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        voluntario_id INTEGER NOT NULL,
+        voluntario_nome TEXT NOT NULL,
+        data_culto TEXT NOT NULL,
+        comentario TEXT NOT NULL,
+        status TEXT DEFAULT 'novo', -- 'novo', 'boa_ideia', 'lixeira'
+        timestamp_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(voluntario_id) REFERENCES voluntarios(id)
+    )''')
+    conn.commit()
+
+
 def adicionar_voluntario(conn, nome, usuario, senha, atribuicoes, disponibilidade, role='voluntario'):
     c = conn.cursor()
     hashed_senha = utils.hash_password(senha)
@@ -255,3 +270,46 @@ def get_contagem_servicos_passados(conn, mes_referencia_atual):
         GROUP BY voluntario_id
     """
     return pd.read_sql_query(query, conn, params=(mes_referencia_atual,))
+
+def salvar_feedback(conn, voluntario_id, voluntario_nome, data_culto, comentario):
+    """Salva um novo feedback no banco de dados."""
+    try:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO feedbacks (voluntario_id, voluntario_nome, data_culto, comentario)
+            VALUES (?, ?, ?, ?)
+        """, (voluntario_id, voluntario_nome, data_culto, comentario))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar feedback: {e}")
+        conn.rollback()
+        return False
+
+def get_feedbacks(conn, status_filter: list = None):
+    """Busca feedbacks, opcionalmente filtrando por uma lista de status."""
+    if status_filter is None:
+        status_filter = ['novo', 'boa_ideia'] # Por padrão, não mostra a lixeira
+    
+    placeholders = ','.join('?' for status in status_filter)
+    query = f"SELECT * FROM feedbacks WHERE status IN ({placeholders}) ORDER BY timestamp_criacao DESC"
+    
+    return pd.read_sql_query(query, conn, params=status_filter)
+
+def atualizar_status_feedback(conn, feedback_id, novo_status):
+    """Atualiza o status de um feedback (ex: para 'boa_ideia' ou 'lixeira')."""
+    try:
+        c = conn.cursor()
+        c.execute("UPDATE feedbacks SET status = ? WHERE id = ?", (novo_status, feedback_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao atualizar status do feedback: {e}")
+        conn.rollback()
+        return False
+
+def feedback_ja_enviado(conn, voluntario_id, data_culto):
+    """Verifica se um voluntário já enviou feedback para um culto específico."""
+    c = conn.cursor()
+    c.execute("SELECT 1 FROM feedbacks WHERE voluntario_id = ? AND data_culto = ?", (voluntario_id, data_culto))
+    return c.fetchone() is not None
