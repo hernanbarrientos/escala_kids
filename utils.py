@@ -24,11 +24,10 @@ DISPONIBILIDADE_OPCOES = [
     "Quinta-feira"
 ]
 
-# --- FUNÇÃO DE RENDERIZAÇÃO DA SIDEBAR ---
+# --- FUNÇÃO DE RENDERIZAÇÃO DA SIDEBAR (VERSÃO ESTÁVEL) ---
 def render_sidebar():
     """
-    Cria a barra lateral de navegação de forma defensiva, usando .get()
-    para evitar AttributeErrors com o st.session_state.
+    Cria a barra lateral de navegação de forma defensiva e estável, sem st.rerun().
     """
     with st.sidebar:
         st.title("Ministério Kids")
@@ -44,26 +43,20 @@ def render_sidebar():
                 st.header("Menu do Administrador")
                 if st.button("Administração", use_container_width=True, type="primary" if st.session_state.get('page') == "painel_admin" else "secondary"):
                     st.session_state.page = "painel_admin"
-                    st.rerun()
                 if st.button("Gerar Escala", use_container_width=True, type="primary" if st.session_state.get('page') == "gerar_escala" else "secondary"):
                     st.session_state.page = "gerar_escala"
-                    st.rerun()
                 if st.button("Ver Comentários", use_container_width=True, type="primary" if st.session_state.get('page') == "comentarios" else "secondary"):
                     st.session_state.page = "comentarios"
-                    st.rerun()
 
             elif user_role == 'voluntario':
                 st.header("Menu do Voluntário")
                 if st.button("Confirmar Disponibilidade", use_container_width=True, type="primary" if st.session_state.get('page') == "painel_voluntario" else "secondary"):
                     st.session_state.page = "painel_voluntario"
-                    st.rerun()
                 if st.button("Ver Minha Escala", use_container_width=True, type="primary" if st.session_state.get('page') == "minha_escala" else "secondary"):
                     st.session_state.page = "minha_escala"
-                    st.rerun()
 
             if st.button("Alterar Senha", use_container_width=True, type="primary" if st.session_state.get('page') == "alterar_senha" else "secondary"):
                 st.session_state.page = "alterar_senha"
-                st.rerun()
 
             st.markdown("---")
             if st.button("Logout", use_container_width=True):
@@ -72,7 +65,7 @@ def render_sidebar():
                     if key in st.session_state:
                         del st.session_state[key]
                 st.session_state.page = "login"
-                st.rerun()
+                # st.rerun() é implicitamente chamado ao mudar de página via session_state no app.py
         else:
             st.info("Faça o login para acessar o sistema.")
 
