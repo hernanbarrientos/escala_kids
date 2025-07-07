@@ -1,135 +1,95 @@
-# utils.py
-
-import locale
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
-import calendar
-from collections import defaultdict
-import bcrypt 
+# views/minha_escala.py
 import streamlit as st
+import pandas as pd
+import database as db
+from datetime import datetime
 
-# --- CONSTANTES DA APLICAÇÃO ---
-ATRIBUICOES_LISTA = [
-    "Lider da escala",
-    "Recepção",
-    "Auxiliar",
-    "Baby Historia",
-    "Primario/Juvenil",
-    "Inclusão",
-    "Baby Auxiliar",    
-]
+def show_page():
+    # --- Verificação de Login e Permissão ---
+    if not st.session_state.get('logged_in') or st.session_state.user_role != 'voluntario':
+        st.error("Você precisa estar logado como voluntário para acessar esta página.")
+        if st.button("Ir para Login"):
+            st.session_state.page = 'login'
+            st.rerun()
+        st.stop()
+    
+    # --- Conteúdo da Página ---
+    conn = st.session_state.db_conn
+    voluntario_info = st.session_state.voluntario_info
+    
+    if 'disponibilidade_salva_sucesso' in st.session_state and st.session_state.disponibilidade_salva_sucesso:
+        st.success("✅ Sua disponibilidade foi registrada/atualizada com sucesso!")
+        del st.session_state.disponibilidade_salva_sucesso
 
-DISPONIBILIDADE_OPCOES = [
-    "Domingo Manhã",  
-    "Domingo Noite", 
-    "Quinta-feira"
-]
+    nome_voluntario = voluntario_info.get("nome", "Voluntário")
+    st.title(f"🗓️ Minha Escala")
+    st.write(f"Olá, **{nome_voluntario}**! Aqui estão os seus compromissos e a oportunidade de deixar seu feedback.")
+    st.markdown("---")
 
-# --- FUNÇÕES AUXILIARES ---
-def configurar_localidade():
-    """Define a localidade para português para obter nomes de meses corretos."""
+    with st.expander("Opções de Teste (Apenas para desenvolvimento)"):
+        modo_teste = st.checkbox("Ativar modo de teste de feedback (trata todas as escalas como passadas)")
+    st.markdown("---")
+
     try:
-        locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
-    except locale.Error:
-        try:
-            locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil')
-        except locale.Error:
-            print("Localidade pt_BR não encontrada, usando padrão do sistema.")
+        minha_escala_df = db.get_escala_por_voluntario(conn, voluntario_info['id'])
 
-def get_dias_culto_proximo_mes(disponibilidade_geral_voluntario: list = None):
-    """
-    Gera um dicionário de opções de culto para o próximo mês, filtrado pela
-    disponibilidade geral do voluntário.
-    """
-    # --- CORREÇÃO APLICADA AQUI ---
-    # Garante que a localidade seja definida para Português
-    configurar_localidade()
-    
-    if disponibilidade_geral_voluntario is None:
-        # Se nenhuma disponibilidade for fornecida, retorna todos os dias de culto possíveis
-        disponibilidade_geral_voluntario = DISPONIBILIDADE_OPCOES
-    
-    hoje = datetime.now()
-    proximo_mes_data = hoje + relativedelta(months=1)
-    ano = proximo_mes_data.year
-    mes = proximo_mes_data.month
-    nome_mes_ref = proximo_mes_data.strftime("%B").capitalize()
+        if minha_escala_df.empty:
+            st.info("Você ainda não foi escalado(a) para nenhuma data.")
+        else:
+            minha_escala_df['data_culto_dt'] = pd.to_datetime(minha_escala_df['data_culto'].str.split(' - ').str[0], format='%d/%m')
+            hoje = datetime.now()
+            minha_escala_df['data_culto_dt'] = minha_escala_df['data_culto_dt'].apply(
+                lambda dt: dt.replace(year=hoje.year + 1) if dt.month < hoje.month else dt.replace(year=hoje.year)
+            )
 
-    opcoes_agrupadas = defaultdict(list)
-    num_dias = calendar.monthrange(ano, mes)[1]
+            if modo_teste:
+                escalas_futuras = pd.DataFrame()
+                escalas_passadas = minha_escala_df
+            else:
+                escalas_futuras = minha_escala_df[minha_escala_df['data_culto_dt'].dt.date >= hoje.date()]
+                escalas_passadas = minha_escala_df[minha_escala_df['data_culto_dt'].dt.date < hoje.date()]
 
-    for dia in range(1, num_dias + 1):
-        data_atual = datetime(ano, mes, dia)
-        dia_formatado = data_atual.strftime('%d/%m')
-        dia_da_semana = data_atual.weekday()
-
-        if dia_da_semana == 3 and "Quinta-feira" in disponibilidade_geral_voluntario:
-            opcoes_agrupadas["Quinta-feira"].append(dia_formatado)
-        elif dia_da_semana == 6: # Domingo
-            if "Domingo Manhã" in disponibilidade_geral_voluntario:
-                opcoes_agrupadas["Domingo Manhã"].append(dia_formatado)
-            if "Domingo Noite" in disponibilidade_geral_voluntario:
-                opcoes_agrupadas["Domingo Noite"].append(dia_formatado)
-
-    return dict(opcoes_agrupadas), f"{nome_mes_ref} de {ano}"
-
-# --- FUNÇÕES DE SEGURANÇA (SENHAS) ---
-def hash_password(password):
-    """
-    Gera um hash bcrypt da senha fornecida.
-    """
-    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    return hashed.decode('utf-8')
-
-def check_password(password, hashed_password):
-    """
-    Verifica se a senha fornecida corresponde ao hash armazenado.
-    """
-    try:
-        return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
-    except (ValueError, TypeError):
-        return False
-    
-def render_sidebar():
-    with st.sidebar:
-        st.title("Ministério Kids")
-        st.markdown("---")
-
-        if st.session_state.get("logged_in"):
-            st.write(f"Bem-vindo(a), **{st.session_state.voluntario_info['nome']}**!")
-            
-            if st.session_state.user_role == 'admin':
-                st.header("Menu do Administrador")
-                if st.button("Administração", use_container_width=True, type="primary" if st.session_state.page == "painel_admin" else "secondary"):
-                    st.session_state.page = "painel_admin"
-                    st.rerun()
-                if st.button("Gerar Escala", use_container_width=True, type="primary" if st.session_state.page == "gerar_escala" else "secondary"):
-                    st.session_state.page = "gerar_escala"
-                    st.rerun()
-                if st.button("Ver Comentários", use_container_width=True, type="primary" if st.session_state.page == "comentarios" else "secondary"):
-                    st.session_state.page = "comentarios"
-                    st.rerun()
-            else: # 'voluntario'
-                st.header("Menu do Voluntário")
-                if st.button("Meu Painel", use_container_width=True, type="primary" if st.session_state.page == "painel_voluntario" else "secondary"):
-                    st.session_state.page = "painel_voluntario"
-                    st.rerun()
-                if st.button("Ver Minha Escala", use_container_width=True, type="primary" if st.session_state.page == "minha_escala" else "secondary"):
-                    st.session_state.page = "minha_escala"
-                    st.rerun()
-
-            if st.button("Alterar Senha", use_container_width=True, type="primary" if st.session_state.page == "alterar_senha" else "secondary"):
-                st.session_state.page = "alterar_senha"
-                st.rerun()
+            st.subheader("Próximas Escalas")
+            if not escalas_futuras.empty:
+                st.dataframe(
+                    escalas_futuras[['data_culto', 'funcao']].rename(columns={'data_culto': 'Data do Culto', 'funcao': 'Minha Função'}), 
+                    hide_index=True, 
+                    use_container_width=True
+                )
+            else:
+                st.info("Nenhuma escala futura encontrada.")
 
             st.markdown("---")
-            if st.button("Logout", use_container_width=True):
-                # Limpa apenas as informações do usuário, mantendo a conexão
-                keys_to_clear = ['logged_in', 'user_role', 'voluntario_info']
-                for key in keys_to_clear:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.session_state.page = "login"
-                st.rerun()
-        else:
-            st.info("Faça o login para acessar o sistema.")
+            st.subheader("Deixar Feedback de Escalas Anteriores")
+
+            if not escalas_passadas.empty:
+                for _, linha in escalas_passadas.iterrows():
+                    data_culto = linha['data_culto']
+                    funcao = linha['funcao']
+                    
+                    with st.expander(f"**{data_culto}** - Função: **{funcao}**"):
+                        feedback_enviado = db.feedback_ja_enviado(conn, voluntario_info['id'], data_culto)
+                        
+                        if feedback_enviado:
+                            st.success("✔️ Você já enviou seu feedback para este dia. Obrigado!")
+                        else:
+                            # --- CORREÇÃO APLICADA AQUI ---
+                            # A chave do formulário agora inclui a função, tornando-a única
+                            form_key = f"form_{data_culto}_{funcao}"
+                            
+                            with st.form(key=form_key):
+                                comentario = st.text_area("Deixe seu comentário, sugestão ou ponto de melhoria:", key=f"comment_{form_key}", height=150)
+                                if st.form_submit_button("Enviar Feedback"):
+                                    if comentario:
+                                        if db.salvar_feedback(conn, voluntario_info['id'], voluntario_info['nome'], data_culto, comentario):
+                                            st.success("Seu feedback foi enviado com sucesso!")
+                                            st.rerun()
+                                        else:
+                                            st.error("Ocorreu um erro ao enviar seu feedback.")
+                                    else:
+                                        st.warning("Por favor, escreva um comentário antes de enviar.")
+            else:
+                st.info("Nenhuma escala anterior encontrada para deixar feedback.")
+            
+    except Exception as e:
+        st.error(f"Ocorreu um erro ao carregar sua escala: {e}")
