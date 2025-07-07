@@ -35,17 +35,72 @@ def show_page():
     st.info(f"A escala a ser gerada e editada é para o mês de: **{mes_referencia}**")
 
     if st.button("Gerar Nova Escala (Substitui a escala salva)", type="primary"):
-        with st.spinner("Processando regras, montando e salvando a nova escala..."):
+        with st.spinner("Processando regras com balanceamento de carga e montando a escala..."):
             voluntarios_df = db.listar_voluntarios(conn)
+            
+            # --- LÓGICA DE BALANCEAMENTO DE CARGA (INÍCIO) ---
+            # 1. Busca a contagem de serviços de meses passados.
+            contagem_df = db.get_contagem_servicos_passados(conn, mes_referencia)
+            
+            # 2. Junta a contagem com a lista de voluntários.
+            voluntarios_df = pd.merge(voluntarios_df, contagem_df, left_on='id', right_on='voluntario_id', how='left')
+            voluntarios_df.drop(columns=['voluntario_id'], inplace=True) # Remove coluna duplicada
+            voluntarios_df['contagem'].fillna(0, inplace=True) # Preenche com 0 para quem nunca serviu
+            voluntarios_df['contagem'] = voluntarios_df['contagem'].astype(int) # Garante que a contagem é um número inteiro
+            # --- FIM DA LÓGICA DE BALANCEAMENTO ---
+
             disponibilidades_df = db.listar_disponibilidades_por_mes(conn, mes_referencia)
             escala_gerada = []
             
-            ano = proximo_mes_data.year
-            mes = proximo_mes_data.month
+            ano, mes = proximo_mes_data.year, proximo_mes_data.month
             num_dias_mes = calendar.monthrange(ano, mes)[1]
 
-            # (A sua lógica de loop para gerar a lista 'escala_gerada' permanece aqui, sem alterações)
-            # ...
+            for dia in range(1, num_dias_mes + 1):
+                data_atual = datetime(ano, mes, dia)
+                dia_semana = data_atual.weekday()
+
+                tipos_culto_dia = []
+                if dia_semana == 3: tipos_culto_dia.append(f"{data_atual.strftime('%d/%m')} - Quinta-feira")
+                elif dia_semana == 6:
+                    tipos_culto_dia.append(f"{data_atual.strftime('%d/%m')} - Domingo Manhã")
+                    tipos_culto_dia.append(f"{data_atual.strftime('%d/%m')} - Domingo Noite")
+
+                for culto_str in tipos_culto_dia:
+                    tipo_culto_key = culto_str.split(' - ')[1]
+                    if tipo_culto_key not in NECESSIDADES_ESCALA: continue
+                    
+                    necessidades = NECESSIDADES_ESCALA[tipo_culto_key]
+                    ja_escalados_neste_culto = []
+
+                    for atribuicao, quantidade in necessidades.items():
+                        for i in range(quantidade):
+                            candidatos = voluntarios_df[voluntarios_df['atribuicoes'].str.contains(atribuicao, na=False, regex=False)]
+                            ids_disponiveis = disponibilidades_df[disponibilidades_df['datas_disponiveis'].str.contains(culto_str, na=False, regex=False)]['voluntario_id']
+                            candidatos = candidatos[candidatos['id'].isin(ids_disponiveis)]
+                            
+                            if tipo_culto_key.startswith("Domingo") and dia <= 7:
+                                ids_serviram_ceia = disponibilidades_df[disponibilidades_df['ceia_passada'] == 'Sim']['voluntario_id']
+                                candidatos = candidatos[~candidatos['id'].isin(ids_serviram_ceia)]
+                            
+                            candidatos = candidatos[~candidatos['id'].isin(ja_escalados_neste_culto)]
+
+                            if not candidatos.empty:
+                                # --- LÓGICA DE BALANCEAMENTO (SELEÇÃO) ---
+                                # 3. Ordena os candidatos por quem serviu menos vezes e pega o primeiro.
+                                # Em caso de empate, a ordem original (ou aleatória do merge) decide.
+                                voluntario_escolhido = candidatos.sort_values(by='contagem', ascending=True).iloc[0]
+                                
+                                nome_escolhido = voluntario_escolhido['nome']
+                                id_escolhido = voluntario_escolhido['id']
+                                escala_gerada.append({'Data': culto_str, 'Função': atribuicao, 'Voluntário Escalado': nome_escolhido})
+                                ja_escalados_neste_culto.append(id_escolhido)
+                                
+                                # 4. Atualiza a contagem em memória para que ele não seja o primeiro a ser escolhido de novo neste mês.
+                                voluntarios_df.loc[voluntarios_df['id'] == id_escolhido, 'contagem'] += 1
+                                # --- FIM DA LÓGICA DE SELEÇÃO ---
+                            else:
+                                escala_gerada.append({'Data': culto_str, 'Função': atribuicao, 'Voluntário Escalado': '**VAGA NÃO PREENCHIDA**'})
+            
 
             if escala_gerada:
                 escala_df = pd.DataFrame(escala_gerada)
@@ -141,3 +196,5 @@ def show_page():
                 st.success("Alterações manuais na escala foram salvas com sucesso!")
             else:
                 st.error("Ocorreu um erro ao salvar as alterações manuais.")
+
+

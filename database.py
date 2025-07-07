@@ -242,3 +242,16 @@ def listar_escala_completa_por_mes(conn, mes_referencia):
         conn,
         params=(mes_referencia,)
     )
+
+def get_contagem_servicos_passados(conn, mes_referencia_atual):
+    """
+    Conta quantas vezes cada voluntário foi escalado em meses ANTERIORES
+    ao mês de referência atual. Retorna um DataFrame com [voluntario_id, contagem].
+    """
+    query = """
+        SELECT voluntario_id, COUNT(*) as contagem
+        FROM escala_gerada
+        WHERE mes_referencia < ? AND voluntario_id IS NOT NULL
+        GROUP BY voluntario_id
+    """
+    return pd.read_sql_query(query, conn, params=(mes_referencia_atual,))
