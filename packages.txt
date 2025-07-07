@@ -1,1 +1,5 @@
 locales-all
+pango-dev
+cairo-dev
+gdk-pixbuf-dev
+libffi-dev

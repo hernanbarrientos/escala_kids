@@ -3,3 +3,4 @@ pandas
 bcrypt
 python-dateutil
 openpyxl
+weasyprint

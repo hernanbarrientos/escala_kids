@@ -143,6 +143,20 @@ def show_page():
             aggfunc='first'
         ).fillna("**VAGA NÃO PREENCHIDA**") # Preenche células vazias
 
+        st.markdown("---")
+        st.header("📄 Exportar Escala")
+        
+        # Gera o PDF em memória usando a função do utils
+        pdf_bytes = utils.gerar_pdf_escala(escala_pivot, mes_referencia)
+
+        st.download_button(
+            label="📥 Baixar Escala em PDF",
+            data=pdf_bytes,
+            file_name=f"escala_kids_{mes_referencia.replace(' de ', '_')}.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
+
         # --- LÓGICA PARA OPÇÕES DE EDIÇÃO INTELIGENTES ---
         voluntarios_df = db.listar_voluntarios(conn)
         opcoes_por_funcao = {}

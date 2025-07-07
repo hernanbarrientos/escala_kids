@@ -6,6 +6,8 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import calendar
 import bcrypt
+from weasyprint import HTML, CSS
+import io
 
 # --- CONSTANTES DA APLICAÇÃO ---
 ATRIBUICOES_LISTA = [
@@ -132,3 +134,89 @@ def check_password(password, hashed_password):
         return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
     except (ValueError, TypeError):
         return False
+    
+
+def gerar_pdf_escala(escala_pivot_df, mes_referencia):
+    """
+    Gera um PDF da escala a partir de um DataFrame pivotado, usando HTML e CSS.
+    """
+    # --- CSS para estilizar o PDF ---
+    # Este CSS tenta replicar o máximo possível o seu modelo de imagem.
+    css_string = """
+    @page { size: A4 landscape; margin: 0.5cm; }
+    body { font-family: sans-serif; }
+    h1 { text-align: center; color: #333; }
+    .escala-container { display: flex; justify-content: center; gap: 10px; }
+    .coluna-dia { 
+        display: flex; 
+        flex-direction: column; 
+        gap: 10px;
+        flex-basis: 32%;
+    }
+    .titulo-coluna { 
+        padding: 8px; 
+        font-weight: bold; 
+        text-align: center; 
+        color: white;
+        border-radius: 5px;
+    }
+    .domingo-manha { background-color: #FCE5CD; color: #333;}
+    .domingo-noite { background-color: #FFF2CC; color: #333;}
+    .quinta { background-color: #DDEBF7; color: #333;}
+    .bloco-escala { 
+        display: flex; 
+        border: 1px solid #ccc; 
+        border-radius: 5px;
+        overflow: hidden;
+    }
+    .data-vertical {
+        writing-mode: vertical-rl;
+        transform: rotate(180deg);
+        text-align: center;
+        font-weight: bold;
+        padding: 5px;
+        background-color: #f2f2f2;
+        flex-shrink: 0;
+    }
+    .atribuicoes-lista { padding: 10px; width: 100%;}
+    table { width: 100%; border-collapse: collapse; }
+    td { padding: 4px; }
+    .funcao { font-weight: bold; }
+    """
+
+    # --- Construção do HTML ---
+    html_string = f"<h1>Escala Ministério Kids - {mes_referencia.replace(' de ', ' / ')}</h1>"
+    html_string += '<div class="escala-container">'
+
+    # Organiza os dias da semana
+    dias_semana_ordem = ["Domingo Manhã", "Domingo Noite", "Quinta-feira"]
+    
+    for dia_semana in dias_semana_ordem:
+        # Pega as colunas do DataFrame que correspondem a este dia da semana (ex: '01/08 - Domingo Manhã')
+        datas_do_dia = sorted([d for d in escala_pivot_df.index if dia_semana in d])
+        
+        if not datas_do_dia:
+            continue
+
+        classe_css = dia_semana.lower().replace("ã", "a").replace("-", "")
+        html_string += f'<div class="coluna-dia"><div class="titulo-coluna {classe_css}">{dia_semana}</div>'
+
+        for data_culto in datas_do_dia:
+            data_curta = data_culto.split(' ')[0]
+            html_string += '<div class="bloco-escala">'
+            html_string += f'<div class="data-vertical">{data_curta}</div>'
+            html_string += '<div class="atribuicoes-lista"><table>'
+            
+            for funcao, voluntario in escala_pivot_df.loc[data_culto].items():
+                if voluntario and voluntario != "**VAGA NÃO PREENCHIDA**":
+                     html_string += f'<tr><td class="funcao">{funcao}</td><td>= {voluntario}</td></tr>'
+
+            html_string += '</table></div></div>'
+        
+        html_string += '</div>' # Fecha coluna-dia
+
+    html_string += '</div>' # Fecha escala-container
+
+    # --- Geração do PDF em memória ---
+    pdf_bytes = HTML(string=html_string).write_pdf(stylesheets=[CSS(string=css_string)])
+    return pdf_bytes
