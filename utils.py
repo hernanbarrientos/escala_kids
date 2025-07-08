@@ -39,35 +39,47 @@ def render_sidebar():
             nome_usuario = st.session_state.get('voluntario_info', {}).get('nome', 'Usuário')
             st.write(f"Bem-vindo(a), **{nome_usuario}**!")
             
-            user_role = st.session_state.get('user_role')
+            is_first_login = st.session_state.get('voluntario_info', {}).get('primeiro_acesso') == 1
 
-            if user_role == 'admin':
-                st.header("Menu do Administrador")
-                if st.button("Administração", use_container_width=True, type="primary" if st.session_state.get('page') == "painel_admin" else "secondary"):
-                    st.session_state.page = "painel_admin"
-                if st.button("Gerar Escala", use_container_width=True, type="primary" if st.session_state.get('page') == "gerar_escala" else "secondary"):
-                    st.session_state.page = "gerar_escala"
-                if st.button("Ver Comentários", use_container_width=True, type="primary" if st.session_state.get('page') == "comentarios" else "secondary"):
-                    st.session_state.page = "comentarios"
+            if is_first_login:
+                st.warning("Por favor, crie uma nova senha para ter acesso ao sistema.", icon="🔒")
+            else:
+                # O menu de navegação normal só aparece se NÃO for o primeiro login
+                user_role = st.session_state.get('user_role')
+                if user_role == 'admin':
+                    st.header("Menu do Administrador")
+                    if st.button("Administração", use_container_width=True, type="primary" if st.session_state.get('page') == "painel_admin" else "secondary"):
+                        st.session_state.page = "painel_admin"
+                        st.rerun()
+                    if st.button("Gerar Escala", use_container_width=True, type="primary" if st.session_state.get('page') == "gerar_escala" else "secondary"):
+                        st.session_state.page = "gerar_escala"
+                        st.rerun()
+                    if st.button("Ver Comentários", use_container_width=True, type="primary" if st.session_state.get('page') == "comentarios" else "secondary"):
+                        st.session_state.page = "comentarios"
+                        st.rerun()
+                
+                elif user_role == 'voluntario':
+                    st.header("Menu do Voluntário")
+                    if st.button("Confirmar Disponibilidade", use_container_width=True, type="primary" if st.session_state.get('page') == "painel_voluntario" else "secondary"):
+                        st.session_state.page = "painel_voluntario"
+                        st.rerun()
+                    if st.button("Ver Minha Escala", use_container_width=True, type="primary" if st.session_state.get('page') == "minha_escala" else "secondary"):
+                        st.session_state.page = "minha_escala"
+                        st.rerun()
+                
+                # O botão Alterar Senha também só aparece se não for o primeiro acesso obrigatório
+                if st.button("Alterar Senha", use_container_width=True, type="primary" if st.session_state.get('page') == "alterar_senha" else "secondary"):
+                    st.session_state.page = "alterar_senha"
+                    st.rerun()
 
-            elif user_role == 'voluntario':
-                st.header("Menu do Voluntário")
-                if st.button("Confirmar Disponibilidade", use_container_width=True, type="primary" if st.session_state.get('page') == "painel_voluntario" else "secondary"):
-                    st.session_state.page = "painel_voluntario"
-                if st.button("Ver Minha Escala", use_container_width=True, type="primary" if st.session_state.get('page') == "minha_escala" else "secondary"):
-                    st.session_state.page = "minha_escala"
-
-            if st.button("Alterar Senha", use_container_width=True, type="primary" if st.session_state.get('page') == "alterar_senha" else "secondary"):
-                st.session_state.page = "alterar_senha"
-
+            # O botão de Logout sempre aparece para um usuário logado
             st.markdown("---")
             if st.button("Logout", use_container_width=True):
                 keys_to_clear = ['logged_in', 'user_role', 'voluntario_info']
                 for key in keys_to_clear:
-                    if key in st.session_state:
-                        del st.session_state[key]
+                    if key in st.session_state: del st.session_state[key]
                 st.session_state.page = "login"
-                # st.rerun() é implicitamente chamado ao mudar de página via session_state no app.py
+                st.rerun()
         else:
             st.info("Faça o login para acessar o sistema.")
 
