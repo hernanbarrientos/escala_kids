@@ -2,23 +2,21 @@
 import streamlit as st
 import database as db
 import utils
-
-# Importa as "views" da pasta de views
 from views import painel_admin, painel_voluntario, alterar_senha, gerar_escala, minha_escala, comentarios
 
 st.set_page_config(
     page_title="Portal Ministério Kids",
-    layout="wide" 
+    layout="wide"
 )
 
 # --- ARQUITETURA DE CONEXÃO DEFINITIVA ---
-# A conexão é verificada e criada UMA VEZ no início de cada execução do script.
-# Isso garante que ela esteja sempre disponível para todas as partes da aplicação.
-if 'db_conn' not in st.session_state or getattr(st.session_state.db_conn, 'closed', True):
-    st.session_state.db_conn = db.conectar_db()
-    db.criar_tabelas(st.session_state.db_conn)
+# A conexão é verificada e criada a cada recarregamento da página, garantindo que ela sempre exista.
+# O Streamlit gerencia o pool de conexões de forma eficiente nos bastidores.
+conn = db.conectar_db()
+db.criar_tabelas(conn)
+st.session_state.db_conn = conn # Armazena a conexão no estado da sessão para as views usarem
 
-# --- Inicialização do estado da sessão ---
+# Inicialização do estado da sessão
 if 'page' not in st.session_state:
     st.session_state.page = 'login'
 if 'logged_in' not in st.session_state:
@@ -29,7 +27,7 @@ if 'logged_in' not in st.session_state:
 # Renderiza a sidebar em todas as "páginas"
 utils.render_sidebar()
 
-# --- Roteador principal ---
+# Roteador principal
 if st.session_state.page == 'login':
     
     # --- Bloco de CSS para centralização (Mantido como você ajustou) ---
@@ -77,7 +75,7 @@ if st.session_state.page == 'login':
                 else:
                     st.error("Usuário ou senha incorretos.")
 
-# --- Roteador para as outras páginas ---
+
 elif st.session_state.page == 'painel_admin':
     painel_admin.show_page()
 elif st.session_state.page == 'painel_voluntario':
