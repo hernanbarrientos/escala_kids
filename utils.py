@@ -7,7 +7,7 @@ from dateutil.relativedelta import relativedelta
 import calendar
 import bcrypt
 from weasyprint import HTML, CSS
-import io
+
 
 # --- CONSTANTES DA APLICAÇÃO ---
 ATRIBUICOES_LISTA = [
@@ -75,7 +75,15 @@ def render_sidebar():
                 if st.button("Alterar Senha", use_container_width=True, type="primary" if st.session_state.get('page') == "alterar_senha" else "secondary"):
                     st.session_state.page = "alterar_senha"
                     st.rerun()
+            st.markdown("---")
+            
+            # --- NOVO MÓDULO DESENVOLVEDOR ---
+            if user_role == 'admin':
+                with st.expander("Modo Avançado"):
+                    st.toggle("Habilitar Ferramentas de Desenvolvedor", key="dev_mode")
 
+
+                
             # O botão de Logout sempre aparece para um usuário logado
             st.markdown("---")
             if st.button("Logout", use_container_width=True):

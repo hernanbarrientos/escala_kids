@@ -3,10 +3,12 @@ import streamlit as st
 import database as db
 import utils
 from views import painel_admin, painel_voluntario, alterar_senha, gerar_escala, minha_escala, comentarios, solicitacoes_troca
+from streamlit_js_eval import streamlit_js_eval
 
 st.set_page_config(
     page_title="Portal Ministério Kids",
-    layout="wide"
+    layout="wide",
+    
 )
 
 # --- ARQUITETURA DE CONEXÃO DEFINITIVA ---
@@ -23,9 +25,17 @@ if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.user_role = None
     st.session_state.voluntario_info = None
+if 'sidebar_state' not in st.session_state:
+    st.session_state.sidebar_state = 'collapsed'
+
 
 # Renderiza a sidebar em todas as "páginas"
 utils.render_sidebar()
+
+if st.session_state.sidebar_state == 'expanded':
+    streamlit_js_eval(js_expressions="setTimeout(() => {const open_button = top.document.querySelector('button[title=\"Open sidebar\"]'); if (open_button) {open_button.click()}}, 50)")
+    # Reseta o estado para não executar novamente em cada recarregamento
+    st.session_state.sidebar_state = 'running'
 
 # Roteador principal
 if st.session_state.page == 'login':
@@ -64,6 +74,7 @@ if st.session_state.page == 'login':
                     st.session_state.logged_in = True
                     st.session_state.user_role = user_data['role']
                     st.session_state.voluntario_info = dict(user_data)
+                    st.session_state.sidebar_state = 'expanded'
                     
                     if user_data['role'] == 'admin':
                         st.session_state.page = 'painel_admin'
