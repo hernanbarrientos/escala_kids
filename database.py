@@ -14,7 +14,7 @@ def criar_tabelas(conn):
     c.execute('''CREATE TABLE IF NOT EXISTS voluntarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nome TEXT NOT NULL,
-        usuario TEXT UNIQUE NOT NULL,
+        usuario TEXT UNIQUE NOT NULL COLLATE NOCASE,
         senha TEXT NOT NULL,
         atribuicoes TEXT,
         disponibilidade TEXT,
