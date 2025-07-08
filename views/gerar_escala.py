@@ -9,6 +9,7 @@ import calendar
 import database as db
 import utils
 from escala_config import NECESSIDADES_ESCALA
+from streamlit_js_eval import streamlit_js_eval 
 
 def show_page():
     """

@@ -5,3 +5,4 @@ python-dateutil
 openpyxl
 weasyprint
 numpy
+streamlit-js-eval
