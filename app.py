@@ -2,7 +2,7 @@
 import streamlit as st
 import database as db
 import utils
-from views import painel_admin, painel_voluntario, alterar_senha, gerar_escala, minha_escala, comentarios
+from views import painel_admin, painel_voluntario, alterar_senha, gerar_escala, minha_escala, comentarios, solicitacoes_troca
 
 st.set_page_config(
     page_title="Portal Ministério Kids",
@@ -88,3 +88,5 @@ elif st.session_state.page == 'minha_escala':
     minha_escala.show_page()
 elif st.session_state.page == 'comentarios':
     comentarios.show_page()
+elif st.session_state.page == 'solicitacoes_troca':
+    solicitacoes_troca.show_page()

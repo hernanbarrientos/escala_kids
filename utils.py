@@ -54,6 +54,10 @@ def render_sidebar():
                     if st.button("Gerar Escala", use_container_width=True, type="primary" if st.session_state.get('page') == "gerar_escala" else "secondary"):
                         st.session_state.page = "gerar_escala"
                         st.rerun()
+                    if st.button("Solicitações de Troca", use_container_width=True, type="primary" if st.session_state.get('page') == "solicitacoes_troca" else "secondary"):
+                        st.session_state.page = "solicitacoes_troca"
+                        st.rerun()
+
                     if st.button("Ver Comentários", use_container_width=True, type="primary" if st.session_state.get('page') == "comentarios" else "secondary"):
                         st.session_state.page = "comentarios"
                         st.rerun()

@@ -11,12 +11,14 @@ NECESSIDADES_ESCALA = {
         "Baby Auxiliar": 1,
         "Primario/Juvenil": 1,
         "Inclusão": 1,
+        "Auxiliar": 1
     },
     "Domingo Manhã": {
         "Lider da escala": 1,
         "Recepção": 1,
         "Baby Historia": 1,
-        "Baby Auxiliar": 2,
+        "Baby Auxiliar 1": 1,
+        "Baby Auxiliar 2": 1,
         "Inclusão": 1,
         "Primario/Juvenil": 1,
         "Auxiliar": 1
@@ -25,7 +27,8 @@ NECESSIDADES_ESCALA = {
         "Lider da escala": 1,
         "Recepção": 1,
         "Baby Historia": 1,
-        "Baby Auxiliar": 2,
+        "Baby Auxiliar 1": 1,
+        "Baby Auxiliar 2": 1,
         "Inclusão": 1,
         "Primario/Juvenil": 1,
         "Auxiliar": 1

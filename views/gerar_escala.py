@@ -1,7 +1,7 @@
-# views/gerar_escala.py
 import streamlit as st
 import pandas as pd
 import random
+import numpy as np # Importa a biblioteca numpy
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import calendar
@@ -74,7 +74,19 @@ def show_page():
 
                     for atribuicao, quantidade in necessidades.items():
                         for i in range(quantidade):
-                            candidatos = voluntarios_df[voluntarios_df['atribuicoes'].str.contains(atribuicao, na=False, regex=False)]
+                            
+                            # --- AJUSTE DE LÓGICA APLICADO AQUI ---
+                            # Verifica se a atribuição é numerada (ex: "Baby Auxiliar 1")
+                            partes_atribuicao = atribuicao.split(' ')
+                            base_atribuicao = atribuicao
+                            if len(partes_atribuicao) > 1 and partes_atribuicao[-1].isdigit():
+                                # Se for, usa a atribuição base para a busca (ex: "Baby Auxiliar")
+                                base_atribuicao = ' '.join(partes_atribuicao[:-1])
+                            
+                            # REGRA 1: Procura pela atribuição base
+                            candidatos = voluntarios_df[voluntarios_df['atribuicoes'].str.contains(base_atribuicao, na=False, regex=False)]
+                            
+                            # O restante das regras continua o mesmo
                             ids_disponiveis = disponibilidades_df[disponibilidades_df['datas_disponiveis'].str.contains(culto_str, na=False, regex=False)]['voluntario_id']
                             candidatos = candidatos[candidatos['id'].isin(ids_disponiveis)]
                             
@@ -85,19 +97,25 @@ def show_page():
                             candidatos = candidatos[~candidatos['id'].isin(ja_escalados_neste_culto)]
 
                             if not candidatos.empty:
-                                # --- LÓGICA DE BALANCEAMENTO (SELEÇÃO) ---
-                                # 3. Ordena os candidatos por quem serviu menos vezes e pega o primeiro.
-                                # Em caso de empate, a ordem original (ou aleatória do merge) decide.
-                                voluntario_escolhido = candidatos.sort_values(by='contagem', ascending=True).iloc[0]
+                                # --- AJUSTE DE LÓGICA APLICADO AQUI ---
+                                # 1. Adiciona uma coluna com um número aleatório para desempate
+                                candidatos_com_desempate = candidatos.copy()
+                                candidatos_com_desempate['desempate_aleatorio'] = np.random.rand(len(candidatos_com_desempate))
+                                
+                                # 2. Ordena primeiro pela contagem, e DEPOIS pelo número aleatório
+                                voluntario_escolhido = candidatos_com_desempate.sort_values(
+                                    by=['contagem', 'desempate_aleatorio'], 
+                                    ascending=[True, True]
+                                ).iloc[0]
+                                # --- FIM DO AJUSTE ---
                                 
                                 nome_escolhido = voluntario_escolhido['nome']
                                 id_escolhido = voluntario_escolhido['id']
                                 escala_gerada.append({'Data': culto_str, 'Função': atribuicao, 'Voluntário Escalado': nome_escolhido})
                                 ja_escalados_neste_culto.append(id_escolhido)
                                 
-                                # 4. Atualiza a contagem em memória para que ele não seja o primeiro a ser escolhido de novo neste mês.
+                                # Atualiza a contagem em memória para o próximo loop
                                 voluntarios_df.loc[voluntarios_df['id'] == id_escolhido, 'contagem'] += 1
-                                # --- FIM DA LÓGICA DE SELEÇÃO ---
                             else:
                                 escala_gerada.append({'Data': culto_str, 'Função': atribuicao, 'Voluntário Escalado': '**VAGA NÃO PREENCHIDA**'})
             

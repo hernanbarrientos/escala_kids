@@ -4,3 +4,4 @@ bcrypt
 python-dateutil
 openpyxl
 weasyprint
+numpy

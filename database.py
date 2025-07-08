@@ -43,6 +43,25 @@ def criar_tabelas(conn):
     )''')
     conn.commit()
 
+    # --- NOVA TABELA PARA GERENCIAR SOLICITAÇÕES DE TROCA ---
+    c.execute('''CREATE TABLE IF NOT EXISTS solicitacoes_troca (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        escala_original_id INTEGER NOT NULL,
+        solicitante_id INTEGER NOT NULL,
+        solicitante_nome TEXT NOT NULL,
+        substituto_id INTEGER NOT NULL,
+        substituto_nome TEXT NOT NULL,
+        data_culto TEXT NOT NULL,
+        funcao TEXT NOT NULL,
+        status TEXT DEFAULT 'pendente', -- pendente, aprovada, negada
+        timestamp_solicitacao DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(escala_original_id) REFERENCES escala_gerada(id),
+        FOREIGN KEY(solicitante_id) REFERENCES voluntarios(id),
+        FOREIGN KEY(substituto_id) REFERENCES voluntarios(id)
+    )''')
+    
+    conn.commit()
+
     # --- LÓGICA DE CRIAÇÃO AUTOMÁTICA DO ADMIN (SEEDING) ---
     c.execute("SELECT COUNT(*) FROM voluntarios WHERE usuario = ?", ('admin',))
     admin_existe = c.fetchone()[0]
@@ -236,9 +255,9 @@ def salvar_escala_gerada(conn, mes_referencia, escala_df_pronto):
         return False
 
 def get_escala_por_voluntario(conn, voluntario_id):
-    """Busca no banco todas as datas que um voluntário específico foi escalado."""
+    """Busca no banco todas as datas que um voluntário específico foi escalado, incluindo o ID da escala."""
     query = """
-        SELECT data_culto, funcao
+        SELECT id, data_culto, funcao
         FROM escala_gerada
         WHERE voluntario_id = ?
         ORDER BY data_culto
@@ -315,3 +334,85 @@ def feedback_ja_enviado(conn, voluntario_id, data_culto, funcao):
     c = conn.cursor()
     c.execute("SELECT 1 FROM feedbacks WHERE voluntario_id = ? AND data_culto = ? AND funcao = ?", (voluntario_id, data_culto, funcao))
     return c.fetchone() is not None
+
+# --- NOVAS FUNÇÕES PARA SOLICITAÇÃO DE TROCA ---
+
+def criar_solicitacao_substituicao(conn, escala_original_id, solicitante_id, solicitante_nome, substituto_id, substituto_nome, data_culto, funcao):
+    """Cria um novo registro de solicitação de troca com status 'pendente'."""
+    try:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO solicitacoes_troca (escala_original_id, solicitante_id, solicitante_nome, substituto_id, substituto_nome, data_culto, funcao)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (escala_original_id, solicitante_id, solicitante_nome, substituto_id, substituto_nome, data_culto, funcao))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao criar solicitação de troca: {e}")
+        conn.rollback()
+        return False
+
+def get_solicitacoes_pendentes(conn):
+    """Busca todas as solicitações de troca com status 'pendente'."""
+    return pd.read_sql_query("SELECT * FROM solicitacoes_troca WHERE status = 'pendente' ORDER BY timestamp_solicitacao DESC", conn)
+
+def get_solicitacao_by_id(conn, solicitacao_id):
+    """Busca os detalhes de uma solicitação específica."""
+    c = conn.cursor()
+    c.execute("SELECT * FROM solicitacoes_troca WHERE id = ?", (solicitacao_id,))
+    return c.fetchone()
+
+def processar_solicitacao(conn, solicitacao_id, novo_status):
+    """
+    Processa uma solicitação, aprovando ou negando-a.
+    AGORA COM A LÓGICA INTELIGENTE PARA A REGRA "RECEPÇÃO = APOIO".
+    """
+    c = conn.cursor()
+    
+    if novo_status == 'aprovada':
+        try:
+            # Inicia uma transação para garantir que todas as operações funcionem ou falhem juntas
+            c.execute("BEGIN TRANSACTION")
+            
+            solicitacao = get_solicitacao_by_id(conn, solicitacao_id)
+            if not solicitacao:
+                raise ValueError("Solicitação não encontrada.")
+
+            # --- LÓGICA PRINCIPAL DA TROCA ---
+            # 1. Atualiza a escala original (a que foi solicitada, ex: Recepção) com os dados do substituto
+            c.execute("""
+                UPDATE escala_gerada
+                SET voluntario_id = ?, voluntario_nome = ?
+                WHERE id = ?
+            """, (solicitacao['substituto_id'], solicitacao['substituto_nome'], solicitacao['escala_original_id']))
+
+            # --- NOVA LÓGICA INTELIGENTE ---
+            # 2. Se a função trocada foi 'Recepção', atualiza também a vaga de 'Apoio'
+            if solicitacao['funcao'] == 'Recepção':
+                c.execute("""
+                    UPDATE escala_gerada
+                    SET voluntario_id = ?, voluntario_nome = ?
+                    WHERE data_culto = ? AND funcao = 'Apoio' AND voluntario_id = ?
+                """, (solicitacao['substituto_id'], solicitacao['substituto_nome'], solicitacao['data_culto'], solicitacao['solicitante_id']))
+
+            # 3. Atualiza o status da solicitação para 'aprovada'
+            c.execute("UPDATE solicitacoes_troca SET status = ? WHERE id = ?", (novo_status, solicitacao_id))
+            
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Erro ao aprovar solicitação: {e}")
+            conn.rollback()
+            return False
+    
+    elif novo_status == 'negada':
+        try:
+            c.execute("UPDATE solicitacoes_troca SET status = ? WHERE id = ?", (novo_status, solicitacao_id))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Erro ao negar solicitação: {e}")
+            conn.rollback()
+            return False
+    
+    return False
