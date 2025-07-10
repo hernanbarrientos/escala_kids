@@ -39,17 +39,25 @@ def show_page():
             if df_usuarios.empty:
                 st.info("Nenhum usuário cadastrado ainda.")
             else:
-                st.dataframe(df_usuarios.set_index('id'), use_container_width=True)
+                # --- AJUSTE APLICADO AQUI (1/2) ---
+                # Ordena o DataFrame principal por nome em ordem alfabética, ignorando maiúsculas/minúsculas.
+                df_usuarios_sorted = df_usuarios.sort_values(by='nome', key=lambda col: col.str.lower())
+                
+                # Exibe a tabela ordenada
+                st.dataframe(df_usuarios_sorted.set_index('id'), use_container_width=True)
                 st.markdown("---")
+
                 st.subheader("Ações para um Usuário Específico")
                 
+                # --- AJUSTE APLICADO AQUI (2/2) ---
+                # O selectbox agora usa os IDs do DataFrame já ordenado.
                 id_selecionado = st.selectbox(
                     "Selecione o usuário:",
-                    options=df_usuarios['id'],
-                    format_func=lambda id: f"{df_usuarios.loc[df_usuarios['id'] == id, 'nome'].iloc[0]}",
+                    options=df_usuarios_sorted['id'],
+                    format_func=lambda id: f"{df_usuarios_sorted.loc[df_usuarios_sorted['id'] == id, 'nome'].iloc[0]}",
                     key="selectbox_usuario_gerenciar"
                 )
-                
+                               
                 usuario_selecionado_row = db.get_voluntario_by_id(conn, id_selecionado)
                 
                 if usuario_selecionado_row:
