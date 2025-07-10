@@ -8,6 +8,9 @@ import os
 from datetime import datetime
 
 def show_page():
+    """
+    Função principal que renderiza toda a página do Painel de Administração.
+    """
     if not st.session_state.get('logged_in') or st.session_state.user_role != 'admin':
         st.error("Acesso restrito a administradores.")
         if st.button("Ir para Login"):
@@ -20,9 +23,9 @@ def show_page():
 
     tab_gerenciar, tab_adicionar, tab_config_escala = st.tabs(["👥 Gerenciar Usuários", "➕ Adicionar Usuário", "⚙️ Configurar Escala"])
 
-    # ==================================
-    # ABA 1: Gerenciar Usuários
-    # ==================================
+    # =================================================
+    # ABA 1: Gerenciar Usuários (Edição e Exclusão)
+    # =================================================
     with tab_gerenciar:
         col1, col2 = st.columns([0.8, 0.2])
         with col1:
@@ -43,7 +46,7 @@ def show_page():
                 id_selecionado = st.selectbox(
                     "Selecione o usuário:",
                     options=df_usuarios['id'],
-                    format_func=lambda id: f"{df_usuarios.loc[df_usuarios['id'] == id, 'nome'].iloc[0]} (ID: {id})",
+                    format_func=lambda id: f"{df_usuarios.loc[df_usuarios['id'] == id, 'nome'].iloc[0]}",
                     key="selectbox_usuario_gerenciar"
                 )
                 
@@ -53,11 +56,12 @@ def show_page():
                     usuario = dict(usuario_selecionado_row)
                     with st.form("form_editar_usuario"):
                         st.write(f"**Editando:** {usuario['nome']}")
+                        
                         nome = st.text_input("Nome", value=usuario["nome"])
                         usuario_login = st.text_input("Usuário (Login)", value=usuario["usuario"])
-                        celular = st.text_input("Celular (formato 55119...)", value=usuario.get("celular", ""))
                         nova_senha = st.text_input("Nova Senha", type="password", placeholder="Deixe em branco para não alterar")
                         st.text_input("Tipo de Acesso (Papel)", value=usuario["role"].capitalize(), disabled=True)
+
                         atribuicoes_selecionadas = []
                         disponibilidade_selecionada = []
                         if usuario["role"] == "voluntario":
@@ -68,6 +72,7 @@ def show_page():
                                 with cols_atr[i % 3]:
                                     if st.checkbox(atr, value=(atr in default_atribuicoes), key=f"edit_atr_{id_selecionado}_{atr}"):
                                         atribuicoes_selecionadas.append(atr)
+                            
                             st.write("**Disponibilidade Geral (obrigatório):**")
                             default_disponibilidade = [d.strip() for d in (usuario.get("disponibilidade") or "").split(",") if d.strip()]
                             cols_disp = st.columns(3)
@@ -75,19 +80,22 @@ def show_page():
                                 with cols_disp[i % 3]:
                                     if st.checkbox(disp, value=(disp in default_disponibilidade), key=f"edit_disp_{id_selecionado}_{disp}"):
                                         disponibilidade_selecionada.append(disp)
+
                         if st.form_submit_button("💾 Salvar Alterações"):
                             is_valid = True
                             if usuario["role"] == "voluntario" and (not atribuicoes_selecionadas or not disponibilidade_selecionada):
                                 is_valid = False
                                 st.error("Para voluntários, é obrigatório selecionar pelo menos uma Atribuição e uma Disponibilidade.")
+                            
                             if is_valid:
                                 senha_para_salvar = nova_senha if nova_senha else None
-                                db.editar_voluntario(conn, id_selecionado, nome, usuario_login, senha_para_salvar, celular, ",".join(atribuicoes_selecionadas), ",".join(disponibilidade_selecionada), role=usuario['role'])
+                                db.editar_voluntario(conn, id_selecionado, nome, usuario_login, senha_para_salvar, ",".join(atribuicoes_selecionadas), ",".join(disponibilidade_selecionada), role=usuario['role'])
                                 st.toast(f"Dados de '{nome}' atualizados!", icon="✅")
                     
                     st.markdown("---")
                     if usuario['role'] != 'admin':
                         st.write(f"**Excluir:** {usuario['nome']}")
+                        
                         confirm_key = f"confirm_delete_{usuario['id']}"
                         if confirm_key not in st.session_state:
                             st.session_state[confirm_key] = False
@@ -101,7 +109,7 @@ def show_page():
                                 if st.button("SIM, EXCLUIR", type="primary", use_container_width=True):
                                     db.excluir_voluntario(conn, usuario['id'])
                                     del st.session_state[confirm_key]
-                                    st.success(f"Usuário '{usuario['nome']}' excluído. Clique em 'Atualizar Lista'.")
+                                    st.success(f"Usuário '{usuario['nome']}' excluído. Clique em 'Atualizar Lista' para ver a mudança.")
                             with col_nao:
                                 if st.button("Cancelar", use_container_width=True):
                                     st.session_state[confirm_key] = False
@@ -116,14 +124,17 @@ def show_page():
     # ==================================
     with tab_adicionar:
         st.subheader("➕ Adicionar Novo Usuário")
+        
         role = st.selectbox("Primeiro, selecione o Tipo de Usuário:", ["voluntario", "admin"], key="add_role_select")
+
         with st.form("form_adicionar_usuario", clear_on_submit=True):
             nome = st.text_input("Nome que irá aparecer na escala")
             usuario = st.text_input("Nome de Usuário (Login)")
-            celular = st.text_input("Celular (formato 55119...)", placeholder="Ex: 5511987654321")
             senha = st.text_input("Senha Provisória", type="password")
+            
             atribuicoes_selecionadas = []
             disponibilidade_selecionada = []
+
             if role == "voluntario":
                 st.markdown("---")
                 st.write("**Atribuições do Voluntário (obrigatório):**")
@@ -132,24 +143,29 @@ def show_page():
                     with cols_atr_add[i % 3]:
                         if st.checkbox(atr, key=f"add_atr_{i}"):
                             atribuicoes_selecionadas.append(atr)
+                
                 st.write("**Disponibilidade Geral (obrigatório):**")
                 cols_disp_add = st.columns(3)
                 for i, disp in enumerate(utils.DISPONIBILIDADE_OPCOES):
                     with cols_disp_add[i % 3]:
                         if st.checkbox(disp, key=f"add_disp_{i}"):
                             disponibilidade_selecionada.append(disp)
+            
             submitted = st.form_submit_button("➕ Cadastrar Usuário")
+
             if submitted:
                 is_valid = True
                 if not nome or not usuario or not senha:
                     st.error("Nome, Usuário (Login) e Senha são campos obrigatórios.")
                     is_valid = False
+                
                 if role == "voluntario" and (not atribuicoes_selecionadas or not disponibilidade_selecionada):
                     st.error("Para voluntários, é obrigatório selecionar pelo menos uma Atribuição e uma Disponibilidade.")
                     is_valid = False
+                
                 if is_valid:
                     try:
-                        db.adicionar_voluntario(conn, nome, usuario, senha, celular, ",".join(atribuicoes_selecionadas), ",".join(disponibilidade_selecionada), role=role)
+                        db.adicionar_voluntario(conn, nome, usuario, senha, ",".join(atribuicoes_selecionadas), ",".join(disponibilidade_selecionada), role=role)
                         st.success(f"Usuário '{nome}' cadastrado com sucesso!")
                     except sqlite3.IntegrityError:
                         st.error(f"O nome de usuário '{usuario}' já existe.")
@@ -162,7 +178,7 @@ def show_page():
     with tab_config_escala:
         st.subheader("⚙️ Configurações da Escala e Ferramentas")
         st.markdown("---")
-        col_esquerda, col_direita = st.columns([3, 1])
+        col_esquerda, col_direita = st.columns([2, 1])
 
         with col_esquerda:
             st.markdown("#### Status de Edição")
@@ -194,18 +210,14 @@ def show_page():
                 st.info("Nenhum mês configurado ainda.")
 
         with col_direita:
-            # --- AJUSTE APLICADO AQUI ---
-            # A seção de backup agora só aparece se o "Modo Desenvolvedor" estiver ativo
             if st.session_state.get("dev_mode", False):
                 with st.container(border=True):
                     st.markdown("#### 🗄️ Backup do Sistema")
                     st.info("É recomendado fazer o backup regularmente para garantir a segurança dos dados.", icon="ℹ️")
-
                     db_file_path = "voluntarios.db"
                     if os.path.exists(db_file_path):
                         with open(db_file_path, "rb") as fp:
                             db_bytes = fp.read()
-
                         st.download_button(
                             label="📥 Baixar Backup Completo",
                             data=db_bytes,
