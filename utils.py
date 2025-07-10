@@ -1,11 +1,13 @@
 # utils.py
-
+import streamlit as st
+from collections import defaultdict
 import locale
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import calendar
-from collections import defaultdict
-import bcrypt 
+import bcrypt
+import io
+from weasyprint import HTML, CSS
 
 # --- CONSTANTES DA APLICAÇÃO ---
 ATRIBUICOES_LISTA = [
@@ -15,9 +17,7 @@ ATRIBUICOES_LISTA = [
     "Baby Historia",
     "Primario/Juvenil",
     "Inclusão",
-    "Baby Auxiliar",
-
-    
+    "Baby Auxiliar",    
 ]
 
 DISPONIBILIDADE_OPCOES = [
@@ -26,7 +26,71 @@ DISPONIBILIDADE_OPCOES = [
     "Quinta-feira"
 ]
 
-# --- FUNÇÕES AUXILIARES ---
+# --- FUNÇÃO DE RENDERIZAÇÃO DA SIDEBAR ---
+def render_sidebar():
+    """
+    Cria a barra lateral de navegação de forma defensiva, usando .get()
+    para evitar erros de estado (AttributeError, UnboundLocalError).
+    """
+    with st.sidebar:
+        st.title("Ministério Kids")
+        st.markdown("---")
+
+        if st.session_state.get("logged_in"):
+            nome_usuario = st.session_state.get('voluntario_info', {}).get('nome', 'Usuário')
+            st.write(f"Bem-vindo(a), **{nome_usuario}**!")
+            
+            user_role = st.session_state.get('user_role')
+            is_first_login = st.session_state.get('voluntario_info', {}).get('primeiro_acesso') == 1
+            
+            if is_first_login:
+                st.warning("Por favor, crie uma nova senha para ter acesso ao sistema.", icon="🔒")
+            else:
+                if user_role == 'admin':
+                    st.header("Menu do Administrador")
+                    if st.button("Administração", use_container_width=True, type="primary" if st.session_state.get('page') == "painel_admin" else "secondary"):
+                        st.session_state.page = "painel_admin"
+                        st.rerun()
+                    if st.button("Gerar e Editar Escala", use_container_width=True, type="primary" if st.session_state.get('page') == "gerar_escala" else "secondary"):
+                        st.session_state.page = "gerar_escala"
+                        st.rerun()
+                    if st.button("Ver Comentários", use_container_width=True, type="primary" if st.session_state.get('page') == "comentarios" else "secondary"):
+                        st.session_state.page = "comentarios"
+                        st.rerun()
+                    if st.button("Solicitações de Troca", use_container_width=True, type="primary" if st.session_state.get('page') == "solicitacoes_troca" else "secondary"):
+                        st.session_state.page = "solicitacoes_troca"
+                        st.rerun()
+
+                elif user_role == 'voluntario':
+                    st.header("Menu do Voluntário")
+                    if st.button("Confirmar Disponibilidade", use_container_width=True, type="primary" if st.session_state.get('page') == "painel_voluntario" else "secondary"):
+                        st.session_state.page = "painel_voluntario"
+                        st.rerun()
+                    if st.button("Ver Minha Escala", use_container_width=True, type="primary" if st.session_state.get('page') == "minha_escala" else "secondary"):
+                        st.session_state.page = "minha_escala"
+                        st.rerun()
+
+                if st.button("Alterar Senha", use_container_width=True, type="primary" if st.session_state.get('page') == "alterar_senha" else "secondary"):
+                    st.session_state.page = "alterar_senha"
+                    st.rerun()
+            
+            st.markdown("---")
+            if user_role == 'admin':
+                with st.expander("Modo Avançado"):
+                    st.toggle("Habilitar Ferramentas de Desenvolvedor", key="dev_mode")
+                st.markdown("---")
+
+            if st.button("Logout", use_container_width=True):
+                keys_to_clear = ['logged_in', 'user_role', 'voluntario_info', 'dev_mode']
+                for key in keys_to_clear:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.session_state.page = "login"
+                st.rerun()
+        else:
+            st.info("Faça o login para acessar o sistema.")
+
+# --- FUNÇÕES DE DATA E LOCALIDADE ---
 def configurar_localidade():
     """Define a localidade para português para obter nomes de meses corretos."""
     try:
@@ -37,50 +101,98 @@ def configurar_localidade():
         except locale.Error:
             print("Localidade pt_BR não encontrada, usando padrão do sistema.")
 
-def get_dias_culto_proximo_mes():
+def get_dias_culto_proximo_mes(disponibilidade_geral_voluntario: list = None):
     """
-    Gera um dicionário de opções para indisponibilidade (quintas e domingos) do próximo mês,
-    agrupadas por dia da semana e turno.
+    Gera um dicionário de opções de culto para o próximo mês, filtrado pela
+    disponibilidade geral do voluntário.
     """
     configurar_localidade()
+    
+    if disponibilidade_geral_voluntario is None:
+        disponibilidade_geral_voluntario = DISPONIBILIDADE_OPCOES
+    
     hoje = datetime.now()
     proximo_mes_data = hoje + relativedelta(months=1)
     ano = proximo_mes_data.year
     mes = proximo_mes_data.month
-
     nome_mes_ref = proximo_mes_data.strftime("%B").capitalize()
-    opcoes_agrupadas = defaultdict(list) 
+
+    opcoes_agrupadas = defaultdict(list)
     num_dias = calendar.monthrange(ano, mes)[1]
 
     for dia in range(1, num_dias + 1):
         data_atual = datetime(ano, mes, dia)
-        dia_da_semana = data_atual.weekday() # Segunda-feira é 0, Domingo é 6
+        dia_formatado = data_atual.strftime('%d/%m')
+        dia_da_semana = data_atual.weekday()
 
-        if dia_da_semana == 3: # Quinta-feira (índice 3)
-            opcoes_agrupadas["Quinta-feira"].append(data_atual.strftime("%d/%m"))
-        elif dia_da_semana == 6: # Domingo (índice 6)
-            opcoes_agrupadas["Domingo Manhã"].append(data_atual.strftime("%d/%m"))
-            opcoes_agrupadas["Domingo Noite"].append(data_atual.strftime("%d/%m"))
+        if dia_da_semana == 3 and "Quinta-feira" in disponibilidade_geral_voluntario:
+            opcoes_agrupadas["Quinta-feira"].append(dia_formatado)
+        elif dia_da_semana == 6:
+            if "Domingo Manhã" in disponibilidade_geral_voluntario:
+                opcoes_agrupadas["Domingo Manhã"].append(dia_formatado)
+            if "Domingo Noite" in disponibilidade_geral_voluntario:
+                opcoes_agrupadas["Domingo Noite"].append(dia_formatado)
 
-    # Retorna o defaultdict e o nome do mês de referência
-    return opcoes_agrupadas, f"{nome_mes_ref} de {proximo_mes_data.year}"
+    return dict(opcoes_agrupadas), f"{nome_mes_ref} de {ano}"
 
 # --- FUNÇÕES DE SEGURANÇA (SENHAS) ---
 def hash_password(password):
     """
     Gera um hash bcrypt da senha fornecida.
-    A senha deve ser codificada para bytes antes de ser hasheada.
     """
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    return hashed.decode('utf-8') # Decodifica de volta para string para armazenamento
+    return hashed.decode('utf-8')
 
 def check_password(password, hashed_password):
     """
     Verifica se a senha fornecida corresponde ao hash armazenado.
-    Ambas devem ser codificadas para bytes.
     """
     try:
         return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
-    except ValueError:
-        # Lida com casos onde o hash armazenado pode estar malformado
+    except (ValueError, TypeError):
         return False
+
+# --- FUNÇÃO DE GERAÇÃO DE PDF ---
+def gerar_pdf_escala(escala_pivot_df, mes_referencia):
+    """
+    Gera um PDF da escala a partir de um DataFrame pivotado, usando HTML e CSS.
+    """
+    css_string = """
+    @page { size: A4 landscape; margin: 0.5cm; }
+    body { font-family: sans-serif; }
+    h1 { text-align: center; color: #333; }
+    .escala-container { display: flex; justify-content: center; gap: 10px; }
+    .coluna-dia { display: flex; flex-direction: column; gap: 10px; flex-basis: 32%; }
+    .titulo-coluna { padding: 8px; font-weight: bold; text-align: center; color: white; border-radius: 5px; }
+    .domingo-manha { background-color: #FCE5CD; color: #333;}
+    .domingo-noite { background-color: #FFF2CC; color: #333;}
+    .quinta { background-color: #DDEBF7; color: #333;}
+    .bloco-escala { display: flex; border: 1px solid #ccc; border-radius: 5px; overflow: hidden; }
+    .data-vertical { writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; font-weight: bold; padding: 5px; background-color: #f2f2f2; flex-shrink: 0; }
+    .atribuicoes-lista { padding: 10px; width: 100%;}
+    table { width: 100%; border-collapse: collapse; }
+    td { padding: 4px; }
+    .funcao { font-weight: bold; }
+    """
+    html_string = f"<h1>Escala Ministério Kids - {mes_referencia.replace(' de ', ' / ')}</h1>"
+    html_string += '<div class="escala-container">'
+    dias_semana_ordem = ["Domingo Manhã", "Domingo Noite", "Quinta-feira"]
+    for dia_semana in dias_semana_ordem:
+        datas_do_dia = sorted([d for d in escala_pivot_df.index if dia_semana in d])
+        if not datas_do_dia:
+            continue
+        classe_css = dia_semana.lower().replace("ã", "a").replace("-", "")
+        html_string += f'<div class="coluna-dia"><div class="titulo-coluna {classe_css}">{dia_semana}</div>'
+        for data_culto in datas_do_dia:
+            data_curta = data_culto.split(' ')[0]
+            html_string += '<div class="bloco-escala">'
+            html_string += f'<div class="data-vertical">{data_curta}</div>'
+            html_string += '<div class="atribuicoes-lista"><table>'
+            for funcao, voluntario in escala_pivot_df.loc[data_culto].items():
+                if voluntario and voluntario != "**VAGA NÃO PREENCHIDA**":
+                     html_string += f'<tr><td class="funcao">{funcao}</td><td>= {voluntario}</td></tr>'
+            html_string += '</table></div></div>'
+        html_string += '</div>'
+    html_string += '</div>'
+    pdf_bytes = HTML(string=html_string).write_pdf(stylesheets=[CSS(string=css_string)])
+    return pdf_bytes

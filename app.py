@@ -1,54 +1,103 @@
 # app.py
 import streamlit as st
 import database as db
+import utils
+from views import painel_admin, painel_voluntario, alterar_senha, gerar_escala, minha_escala, comentarios, solicitacoes_troca
+from streamlit_js_eval import streamlit_js_eval
 
-st.set_page_config(page_title="Portal de Voluntários", layout="centered")
+st.set_page_config(
+    page_title="Portal Ministério Kids",
+    layout="wide",
+    
+)
 
+# --- ARQUITETURA DE CONEXÃO DEFINITIVA ---
+# A conexão é verificada e criada a cada recarregamento da página, garantindo que ela sempre exista.
+# O Streamlit gerencia o pool de conexões de forma eficiente nos bastidores.
 conn = db.conectar_db()
-# A chamada a criar_tabelas() já está no próprio database.py (fora das funções),
-# mas mantê-la aqui não causa problemas devido ao IF NOT EXISTS.
-# db.criar_tabelas(conn) # Pode remover esta linha se preferir confiar na chamada global em database.py
+db.criar_tabelas(conn)
+st.session_state.db_conn = conn # Armazena a conexão no estado da sessão para as views usarem
 
+# Inicialização do estado da sessão
+if 'page' not in st.session_state:
+    st.session_state.page = 'login'
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.user_role = None
     st.session_state.voluntario_info = None
-
-st.title("Ministério Kids")
-st.title("👥 Portal de Voluntários")
-st.header("Login de Acesso")
+if 'sidebar_state' not in st.session_state:
+    st.session_state.sidebar_state = 'collapsed'
 
 
-login_usuario = st.text_input("Usuário", key="login_usuario")
-login_senha = st.text_input("Senha", type="password", key="login_senha")
+# Renderiza a sidebar em todas as "páginas"
+utils.render_sidebar()
 
-if st.button("Entrar", type="primary"):
-    # NOVA LÓGICA: Autentica todos os usuários através do banco de dados
-    user_data = db.autenticar_voluntario(conn, login_usuario, login_senha) # user_data agora pode ser admin ou voluntario
+if st.session_state.sidebar_state == 'expanded':
+    streamlit_js_eval(js_expressions="setTimeout(() => {const open_button = top.document.querySelector('button[title=\"Open sidebar\"]'); if (open_button) {open_button.click()}}, 50)")
+    # Reseta o estado para não executar novamente em cada recarregamento
+    st.session_state.sidebar_state = 'running'
 
-    if user_data:
-        st.session_state.logged_in = True
-        st.session_state.user_role = user_data['role'] # Define o papel do usuário com base no DB
-        st.session_state.voluntario_info = dict(user_data) # Armazena todas as info do usuário
+# Roteador principal
+if st.session_state.page == 'login':
+    
+    # --- Bloco de CSS para centralização (Mantido como você ajustou) ---
+    st.markdown("""
+    <style>
+        .stImage { display: flex; justify-content: center; }
+        .login-title { text-align: center; }
+        .login-subheader { text-align: center; }
+    </style>
+    """, unsafe_allow_html=True)
 
-        if st.session_state.user_role == "admin":
-            st.success("Login de administrador bem-sucedido!")
-            st.switch_page("pages/painel_admin.py")
-        elif st.session_state.user_role == "voluntario":
-            # Lógica de primeiro acesso para voluntários (mantida)
-            if user_data['primeiro_acesso'] == 1:
-                st.info("Detectamos que este é seu primeiro acesso. Por favor, altere sua senha.")
-                st.switch_page("pages/alterar_senha.py")
-            else:
-                st.success(f"Bem-vindo(a) de volta, {user_data['nome']}!")
-                st.switch_page("pages/painel_voluntario.py") # Ajustei para painel_voluntario.py
-        else:
-            # Caso algum papel inesperado seja encontrado no DB
-            st.error("Erro de configuração de usuário. Papel desconhecido.")
-    else:
-        st.error("Usuário ou senha incorretos. Tente novamente.")
+    _, central_col, _ = st.columns([1.8, 2, 1.8])
+
+    with central_col:
+        with st.container():
+            
+            sub_col1, sub_col2, sub_col3 = st.columns([1, 1, 1])
+            with sub_col2:
+                st.image("assets/logo_renovo.png", width=150) 
+            
+            st.markdown("<h1 class='login-title'>👶 Ministério Kids</h1>", unsafe_allow_html=True)
+            st.markdown("<h3 class='login-subheader'>🔒 Portal de Voluntários</h3>", unsafe_allow_html=True)
+
+            login_usuario = st.text_input("Usuário", placeholder="Digite seu usuário", label_visibility="collapsed")
+            login_senha = st.text_input("Senha", type="password", placeholder="Digite sua senha", label_visibility="collapsed")
+
+            if st.button("Entrar", type="primary", use_container_width=True):
+                # --- MUDANÇA PRINCIPAL ---
+                # Usa a conexão persistente que está guardada no st.session_state.
+                # Não abre nem fecha uma nova conexão temporária aqui.
+                user_data = db.autenticar_voluntario(st.session_state.db_conn, login_usuario, login_senha)
+                
+                if user_data:
+                    st.session_state.logged_in = True
+                    st.session_state.user_role = user_data['role']
+                    st.session_state.voluntario_info = dict(user_data)
+                    st.session_state.sidebar_state = 'expanded'
+                    
+                    if user_data['role'] == 'admin':
+                        st.session_state.page = 'painel_admin'
+                    elif user_data['primeiro_acesso'] == 1:
+                        st.session_state.page = 'alterar_senha'
+                    else:
+                        st.session_state.page = 'painel_voluntario'
+                    st.rerun()
+                else:
+                    st.error("Usuário ou senha incorretos.")
 
 
-# st.info("Para acesso administrativo, utilize o usuário 'admin'.")
-
-conn.close() # Garante que a conexão seja fechada
+elif st.session_state.page == 'painel_admin':
+    painel_admin.show_page()
+elif st.session_state.page == 'painel_voluntario':
+    painel_voluntario.show_page()
+elif st.session_state.page == 'gerar_escala':
+    gerar_escala.show_page()
+elif st.session_state.page == 'alterar_senha':
+    alterar_senha.show_page()
+elif st.session_state.page == 'minha_escala':
+    minha_escala.show_page()
+elif st.session_state.page == 'comentarios':
+    comentarios.show_page()
+elif st.session_state.page == 'solicitacoes_troca':
+    solicitacoes_troca.show_page()

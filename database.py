@@ -1,7 +1,7 @@
 # database.py
-
 import sqlite3
 import pandas as pd
+import utils
 
 def conectar_db():
     conn = sqlite3.connect("voluntarios.db", check_same_thread=False)
@@ -10,22 +10,23 @@ def conectar_db():
 
 def criar_tabelas(conn):
     c = conn.cursor()
-    # MODIFICAÇÃO: Adicionando a coluna 'role' à tabela voluntarios
+    # Cria a tabela de voluntários
     c.execute('''CREATE TABLE IF NOT EXISTS voluntarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nome TEXT NOT NULL,
-        usuario TEXT UNIQUE NOT NULL,
+        usuario TEXT UNIQUE NOT NULL COLLATE NOCASE,
         senha TEXT NOT NULL,
         atribuicoes TEXT,
         disponibilidade TEXT,
         primeiro_acesso INTEGER DEFAULT 1,
-        role TEXT DEFAULT 'voluntario' -- Nova coluna 'role' com valor padrão 'voluntario'
+        role TEXT DEFAULT 'voluntario'
     )''')
 
-    c.execute('''CREATE TABLE IF NOT EXISTS indisponibilidades (
+    # Cria a tabela de disponibilidades
+    c.execute('''CREATE TABLE IF NOT EXISTS disponibilidades (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         voluntario_id INTEGER NOT NULL,
-        datas_restricao TEXT,
+        datas_disponiveis TEXT,
         ceia_passada TEXT,
         mes_referencia TEXT NOT NULL,
         timestamp_registro DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -33,6 +34,7 @@ def criar_tabelas(conn):
         FOREIGN KEY(voluntario_id) REFERENCES voluntarios(id)
     )''')
 
+    # Cria a tabela de configurações
     c.execute('''CREATE TABLE IF NOT EXISTS configuracoes_escalas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         mes_referencia TEXT NOT NULL UNIQUE,
@@ -41,130 +43,176 @@ def criar_tabelas(conn):
     )''')
     conn.commit()
 
-# Garante que as tabelas são criadas quando o módulo é importado
-conn_inicial_check = conectar_db()
-criar_tabelas(conn_inicial_check)
-conn_inicial_check.close() # Fecha a conexão inicial
+    # --- NOVA TABELA PARA GERENCIAR SOLICITAÇÕES DE TROCA ---
+    c.execute('''CREATE TABLE IF NOT EXISTS solicitacoes_troca (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        escala_original_id INTEGER NOT NULL,
+        solicitante_id INTEGER NOT NULL,
+        solicitante_nome TEXT NOT NULL,
+        substituto_id INTEGER NOT NULL,
+        substituto_nome TEXT NOT NULL,
+        data_culto TEXT NOT NULL,
+        funcao TEXT NOT NULL,
+        status TEXT DEFAULT 'pendente', -- pendente, aprovada, negada
+        timestamp_solicitacao DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(escala_original_id) REFERENCES escala_gerada(id),
+        FOREIGN KEY(solicitante_id) REFERENCES voluntarios(id),
+        FOREIGN KEY(substituto_id) REFERENCES voluntarios(id)
+    )''')
+    
+    conn.commit()
+
+    # --- LÓGICA DE CRIAÇÃO AUTOMÁTICA DO ADMIN (SEEDING) ---
+    c.execute("SELECT COUNT(*) FROM voluntarios WHERE usuario = ?", ('admin',))
+    admin_existe = c.fetchone()[0]
+
+    if admin_existe == 0:
+        print("Usuário 'admin' não encontrado. Criando usuário administrador padrão...")
+        senha_padrao_hash = utils.hash_password("admin123") # Criptografa a senha padrão
+        c.execute("""
+            INSERT INTO voluntarios (nome, usuario, senha, atribuicoes, disponibilidade, primeiro_acesso, role) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, 
+            ("Administrador", "admin", senha_padrao_hash, "", "", 0, "admin") # primeiro_acesso = 0 para não pedir troca de senha
+        )
+        conn.commit()
+        print("Usuário 'admin' criado com sucesso com a senha 'admin123'.")
+
+    # --- NOVA TABELA PARA ARMAZENAR A ESCALA FINAL E EXIBIR PARA O VOLUNTÁRIO ---
+    c.execute('''CREATE TABLE IF NOT EXISTS escala_gerada (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mes_referencia TEXT NOT NULL,
+        data_culto TEXT NOT NULL,
+        funcao TEXT NOT NULL,
+        voluntario_id INTEGER,
+        voluntario_nome TEXT,
+        FOREIGN KEY(voluntario_id) REFERENCES voluntarios(id)
+    )''')
+    conn.commit()
+
+    
+    # --- NOVA TABELA PARA FEEDBACKS ---
+    c.execute('''CREATE TABLE IF NOT EXISTS feedbacks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        voluntario_id INTEGER NOT NULL,
+        voluntario_nome TEXT NOT NULL,
+        data_culto TEXT NOT NULL,
+        funcao TEXT NOT NULL, -- <<< COLUNA ADICIONADA
+        comentario TEXT NOT NULL,
+        status TEXT DEFAULT 'novo',
+        timestamp_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(voluntario_id) REFERENCES voluntarios(id)
+    )''')
+    conn.commit()
 
 
-# MODIFICAÇÃO: Adicionar um novo campo 'role' à função
 def adicionar_voluntario(conn, nome, usuario, senha, atribuicoes, disponibilidade, role='voluntario'):
     c = conn.cursor()
+    hashed_senha = utils.hash_password(senha)
     c.execute("""
         INSERT INTO voluntarios (nome, usuario, senha, atribuicoes, disponibilidade, primeiro_acesso, role) 
         VALUES (?, ?, ?, ?, ?, 1, ?)
-        """, (nome, usuario, senha, atribuicoes, disponibilidade, role))
+        """, (nome, usuario, hashed_senha, atribuicoes, disponibilidade, role))
     conn.commit()
 
-# MODIFICAÇÃO: Editar 'usuario' e 'role' (se aplicável)
-def editar_voluntario(conn, vol_id, nome, usuario, senha, atribuicoes, disponibilidade, role=None):
+def editar_voluntario(conn, vol_id, nome, usuario, senha, atribuicoes, disponibilidade, role):
     c = conn.cursor()
-    # Constrói a query dinamicamente para permitir não alterar a senha ou o role se não fornecidos
-    query_parts = ["nome = ?", "usuario = ?", "atribuicoes = ?", "disponibilidade = ?"]
-    params = [nome, usuario, atribuicoes, disponibilidade]
+    query_parts = ["nome = ?", "usuario = ?", "atribuicoes = ?", "disponibilidade = ?", "role = ?"]
+    params = [nome, usuario, atribuicoes, disponibilidade, role]
 
-    if senha: # Apenas atualiza a senha se uma nova for fornecida
+    if senha:
         query_parts.append("senha = ?")
-        params.append(senha)
-    if role: # Apenas atualiza o role se um novo for fornecido
-        query_parts.append("role = ?")
-        params.append(role)
+        params.append(utils.hash_password(senha))
     
     query = f"UPDATE voluntarios SET {', '.join(query_parts)} WHERE id = ?"
     params.append(vol_id)
-
     c.execute(query, tuple(params))
     conn.commit()
 
-# MODIFICAÇÃO: Autentica com 'usuario' e retorna 'role'
-def autenticar_voluntario(conn, usuario, senha):
+def autenticar_voluntario(conn, usuario, senha_fornecida):
     c = conn.cursor()
-    # Agora selecionamos também a coluna 'role'
-    query = "SELECT id, nome, usuario, atribuicoes, disponibilidade, primeiro_acesso, role FROM voluntarios WHERE usuario = ? AND senha = ?"
-    c.execute(query, (usuario, senha))
-    return c.fetchone()
+    c.execute("SELECT * FROM voluntarios WHERE usuario = ?", (usuario,))
+    user_data = c.fetchone()
+    
+    if user_data:
+        hashed_senha_db = user_data['senha']
+        if utils.check_password(senha_fornecida, hashed_senha_db):
+            return user_data
+    return None
 
 def alterar_senha_e_status(conn, voluntario_id, nova_senha):
     c = conn.cursor()
+    hashed_nova_senha = utils.hash_password(nova_senha)
     c.execute("""
-        UPDATE voluntarios
-        SET senha = ?, primeiro_acesso = 0
-        WHERE id = ?
-    """, (nova_senha, voluntario_id))
+        UPDATE voluntarios SET senha = ?, primeiro_acesso = 0 WHERE id = ?
+    """, (hashed_nova_senha, voluntario_id))
     conn.commit()
 
+# --- Manter as demais funções ---
 def excluir_voluntario(conn, vol_id):
     c = conn.cursor()
     c.execute("DELETE FROM voluntarios WHERE id = ?", (vol_id,))
     conn.commit()
 
-# MODIFICAÇÃO: Incluir 'role' na listagem de voluntários
 def listar_voluntarios(conn):
     return pd.read_sql_query("SELECT id, nome, usuario, atribuicoes, disponibilidade, primeiro_acesso, role FROM voluntarios", conn)
 
-
-#INDISPONIBILIDADES:
-def listar_indisponibilidades_por_mes(conn, mes_referencia):
+def get_voluntario_by_id(conn, voluntario_id):
     c = conn.cursor()
-    c.execute('''
-        SELECT v.id AS voluntario_id, v.nome, i.datas_restricao, i.ceia_passada
-        FROM indisponibilidades i
-        JOIN voluntarios v ON v.id = i.voluntario_id
-        WHERE i.mes_referencia = ?
-    ''', (mes_referencia,))
-    
-    rows = c.fetchall()
-    colunas = ['voluntario_id', 'nome', 'datas_restricao', 'ceia_passada']
-    return pd.DataFrame(rows, columns=colunas)
+    c.execute("SELECT * FROM voluntarios WHERE id = ?", (voluntario_id,))
+    return c.fetchone()
 
-def salvar_indisponibilidade(conn, voluntario_id, datas_restricao_str, ceia_passada, mes_ref):
+# Funções de disponibilidade
+def salvar_disponibilidade(conn, voluntario_id, datas_disponiveis_str, ceia_passada, mes_ref):
     c = conn.cursor()
     try:
         c.execute("""
-            UPDATE indisponibilidades
-            SET datas_restricao = ?, ceia_passada = ?, timestamp_registro = CURRENT_TIMESTAMP
+            UPDATE disponibilidades SET datas_disponiveis = ?, ceia_passada = ?, timestamp_registro = CURRENT_TIMESTAMP
             WHERE voluntario_id = ? AND mes_referencia = ?
-        """, (datas_restricao_str, ceia_passada, voluntario_id, mes_ref))
-        
+        """, (datas_disponiveis_str, ceia_passada, voluntario_id, mes_ref))
         if c.rowcount == 0:
             c.execute("""
-                INSERT INTO indisponibilidades (voluntario_id, datas_restricao, ceia_passada, mes_referencia)
+                INSERT INTO disponibilidades (voluntario_id, datas_disponiveis, ceia_passada, mes_referencia)
                 VALUES (?, ?, ?, ?)
-            """, (voluntario_id, datas_restricao_str, ceia_passada, mes_ref))
-        
+            """, (voluntario_id, datas_disponiveis_str, ceia_passada, mes_ref))
         conn.commit()
         return True
     except sqlite3.Error as e:
-        print(f"Erro ao salvar/atualizar indisponibilidade: {e}")
+        print(f"Erro ao salvar/atualizar disponibilidade: {e}")
         conn.rollback()
         return False
 
-def carregar_indisponibilidade(conn, voluntario_id, mes_ref):
+def carregar_disponibilidade(conn, voluntario_id, mes_ref):
     c = conn.cursor()
     c.execute("""
-        SELECT datas_restricao, ceia_passada
-        FROM indisponibilidades
+        SELECT datas_disponiveis, ceia_passada
+        FROM disponibilidades
         WHERE voluntario_id = ? AND mes_referencia = ?
     """, (voluntario_id, mes_ref))
     result = c.fetchone()
+    
+    # MUDANÇA: Converte o resultado para um dicionário Python antes de retornar
     if result:
-        return {'datas_restricao': result['datas_restricao'], 'ceia_passada': result['ceia_passada']}
-    return None
+        return dict(result) # Garante que sempre retornamos um dicionário
+    return None # Retorna None se nada for encontrado
 
+def listar_disponibilidades_por_mes(conn, mes_referencia):
+    return pd.read_sql_query("""
+        SELECT v.id AS voluntario_id, v.nome, d.datas_disponiveis, d.ceia_passada
+        FROM disponibilidades d
+        JOIN voluntarios v ON v.id = d.voluntario_id
+        WHERE d.mes_referencia = ?
+    """, conn, params=(mes_referencia,))
+
+# Funções de configuração
 def get_edicao_liberada(conn, mes_ref):
     c = conn.cursor()
     c.execute("SELECT edicao_liberada FROM configuracoes_escalas WHERE mes_referencia = ?", (mes_ref,))
     result = c.fetchone()
-    if result:
-        return bool(result['edicao_liberada'])
-    
-    try:
-        c.execute("INSERT OR IGNORE INTO configuracoes_escalas (mes_referencia, edicao_liberada) VALUES (?, FALSE)", (mes_ref,))
-        conn.commit()
-        return False
-    except sqlite3.Error as e:
-        print(f"Erro ao inserir configuração de escala padrão: {e}")
-        return False
+    if result: return bool(result['edicao_liberada'])
+    c.execute("INSERT OR IGNORE INTO configuracoes_escalas (mes_referencia, edicao_liberada) VALUES (?, FALSE)", (mes_ref,))
+    conn.commit()
+    return False
 
 def set_edicao_liberada(conn, mes_ref, status):
     c = conn.cursor()
@@ -173,8 +221,8 @@ def set_edicao_liberada(conn, mes_ref, status):
             INSERT INTO configuracoes_escalas (mes_referencia, edicao_liberada, ultima_atualizacao)
             VALUES (?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(mes_referencia) DO UPDATE SET
-            edicao_liberada = ?, ultima_atualizacao = CURRENT_TIMESTAMP
-        """, (mes_ref, status, status))
+            edicao_liberada = excluded.edicao_liberada, ultima_atualizacao = CURRENT_TIMESTAMP
+        """, (mes_ref, status))
         conn.commit()
         return True
     except sqlite3.Error as e:
@@ -182,27 +230,189 @@ def set_edicao_liberada(conn, mes_ref, status):
         conn.rollback()
         return False
 
-def get_all_voluntarios_indisponibilidade_for_month(conn, mes_ref):
-    c = conn.cursor()
-    c.execute("""
-        SELECT v.nome, i.datas_restricao, i.ceia_passada
-        FROM indisponibilidades i
-        JOIN voluntarios v ON i.voluntario_id = v.id
-        WHERE i.mes_referencia = ?
-    """, (mes_ref,))
-    return c.fetchall()
-
 def get_all_meses_configurados(conn):
     c = conn.cursor()
-    c.execute("SELECT mes_referencia, edicao_liberada, ultima_atualizacao FROM configuracoes_escalas ORDER BY mes_referencia DESC")
+    c.execute("SELECT mes_referencia FROM configuracoes_escalas ORDER BY mes_referencia DESC")
     return c.fetchall()
 
-# MODIFICAÇÃO: Incluir 'role' na busca por ID
-def get_voluntario_by_id(conn, voluntario_id):
+# --- NOVAS FUNÇÕES PARA GERENCIAR A ESCALA SALVA ---
+
+def salvar_escala_gerada(conn, mes_referencia, escala_df_pronto):
+    """Apaga a escala antiga do mês e salva a nova que já vem pronta."""
     c = conn.cursor()
-    c.execute("""
-        SELECT id, nome, usuario, senha, atribuicoes, disponibilidade, primeiro_acesso, role
-        FROM voluntarios
-        WHERE id = ?
-    """, (voluntario_id,))
+    try:
+        # Apaga qualquer escala existente para este mês para evitar duplicatas
+        c.execute("DELETE FROM escala_gerada WHERE mes_referencia = ?", (mes_referencia,))
+        
+        # O DataFrame já vem com a coluna 'mes_referencia', então apenas o inserimos
+        escala_df_pronto.to_sql('escala_gerada', conn, if_exists='append', index=False)
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar escala gerada: {e}")
+        conn.rollback()
+        return False
+
+def get_escala_por_voluntario(conn, voluntario_id):
+    """Busca no banco todas as datas que um voluntário específico foi escalado, incluindo o ID da escala."""
+    query = """
+        SELECT id, data_culto, funcao
+        FROM escala_gerada
+        WHERE voluntario_id = ?
+        ORDER BY data_culto
+    """
+    return pd.read_sql_query(query, conn, params=(voluntario_id,))
+
+def verificar_existencia_escala(conn, mes_referencia):
+    """Verifica se já existe uma escala salva para o mês de referência."""
+    c = conn.cursor()
+    c.execute("SELECT 1 FROM escala_gerada WHERE mes_referencia = ? LIMIT 1", (mes_referencia,))
+    return c.fetchone() is not None
+
+def listar_escala_completa_por_mes(conn, mes_referencia):
+    """Busca a escala completa de um mês para o editor."""
+    return pd.read_sql_query(
+        "SELECT data_culto, funcao, voluntario_nome FROM escala_gerada WHERE mes_referencia = ?",
+        conn,
+        params=(mes_referencia,)
+    )
+
+def get_contagem_servicos_passados(conn, mes_referencia_atual):
+    """
+    Conta quantas vezes cada voluntário foi escalado em meses ANTERIORES
+    ao mês de referência atual. Retorna um DataFrame com [voluntario_id, contagem].
+    """
+    query = """
+        SELECT voluntario_id, COUNT(*) as contagem
+        FROM escala_gerada
+        WHERE mes_referencia < ? AND voluntario_id IS NOT NULL
+        GROUP BY voluntario_id
+    """
+    return pd.read_sql_query(query, conn, params=(mes_referencia_atual,))
+
+def salvar_feedback(conn, voluntario_id, voluntario_nome, data_culto, funcao, comentario):
+    """Salva um novo feedback no banco de dados, incluindo a função."""
+    try:
+        c = conn.cursor()
+        # Adicionada a coluna 'funcao' na inserção
+        c.execute("""
+            INSERT INTO feedbacks (voluntario_id, voluntario_nome, data_culto, funcao, comentario)
+            VALUES (?, ?, ?, ?, ?)
+        """, (voluntario_id, voluntario_nome, data_culto, funcao, comentario))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar feedback: {e}")
+        conn.rollback()
+        return False
+
+def get_feedbacks(conn, status_filter: list = None):
+    """Busca feedbacks, opcionalmente filtrando por uma lista de status."""
+    if status_filter is None:
+        status_filter = ['novo', 'boa_ideia'] # Por padrão, não mostra a lixeira
+    
+    placeholders = ','.join('?' for status in status_filter)
+    query = f"SELECT * FROM feedbacks WHERE status IN ({placeholders}) ORDER BY timestamp_criacao DESC"
+    
+    return pd.read_sql_query(query, conn, params=status_filter)
+
+def atualizar_status_feedback(conn, feedback_id, novo_status):
+    """Atualiza o status de um feedback (ex: para 'boa_ideia' ou 'lixeira')."""
+    try:
+        c = conn.cursor()
+        c.execute("UPDATE feedbacks SET status = ? WHERE id = ?", (novo_status, feedback_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao atualizar status do feedback: {e}")
+        conn.rollback()
+        return False
+
+def feedback_ja_enviado(conn, voluntario_id, data_culto, funcao):
+    """Verifica se um voluntário já enviou feedback para um culto e função específicos."""
+    c = conn.cursor()
+    c.execute("SELECT 1 FROM feedbacks WHERE voluntario_id = ? AND data_culto = ? AND funcao = ?", (voluntario_id, data_culto, funcao))
+    return c.fetchone() is not None
+
+# --- NOVAS FUNÇÕES PARA SOLICITAÇÃO DE TROCA ---
+
+def criar_solicitacao_substituicao(conn, escala_original_id, solicitante_id, solicitante_nome, substituto_id, substituto_nome, data_culto, funcao):
+    """Cria um novo registro de solicitação de troca com status 'pendente'."""
+    try:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO solicitacoes_troca (escala_original_id, solicitante_id, solicitante_nome, substituto_id, substituto_nome, data_culto, funcao)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (escala_original_id, solicitante_id, solicitante_nome, substituto_id, substituto_nome, data_culto, funcao))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao criar solicitação de troca: {e}")
+        conn.rollback()
+        return False
+
+def get_solicitacoes_pendentes(conn):
+    """Busca todas as solicitações de troca com status 'pendente'."""
+    return pd.read_sql_query("SELECT * FROM solicitacoes_troca WHERE status = 'pendente' ORDER BY timestamp_solicitacao DESC", conn)
+
+def get_solicitacao_by_id(conn, solicitacao_id):
+    """Busca os detalhes de uma solicitação específica."""
+    c = conn.cursor()
+    c.execute("SELECT * FROM solicitacoes_troca WHERE id = ?", (solicitacao_id,))
     return c.fetchone()
+
+def processar_solicitacao(conn, solicitacao_id, novo_status):
+    """
+    Processa uma solicitação, aprovando ou negando-a.
+    AGORA COM A LÓGICA INTELIGENTE PARA A REGRA "RECEPÇÃO = APOIO".
+    """
+    c = conn.cursor()
+    
+    if novo_status == 'aprovada':
+        try:
+            # Inicia uma transação para garantir que todas as operações funcionem ou falhem juntas
+            c.execute("BEGIN TRANSACTION")
+            
+            solicitacao = get_solicitacao_by_id(conn, solicitacao_id)
+            if not solicitacao:
+                raise ValueError("Solicitação não encontrada.")
+
+            # --- LÓGICA PRINCIPAL DA TROCA ---
+            # 1. Atualiza a escala original (a que foi solicitada, ex: Recepção) com os dados do substituto
+            c.execute("""
+                UPDATE escala_gerada
+                SET voluntario_id = ?, voluntario_nome = ?
+                WHERE id = ?
+            """, (solicitacao['substituto_id'], solicitacao['substituto_nome'], solicitacao['escala_original_id']))
+
+            # --- NOVA LÓGICA INTELIGENTE ---
+            # 2. Se a função trocada foi 'Recepção', atualiza também a vaga de 'Apoio'
+            if solicitacao['funcao'] == 'Recepção':
+                c.execute("""
+                    UPDATE escala_gerada
+                    SET voluntario_id = ?, voluntario_nome = ?
+                    WHERE data_culto = ? AND funcao = 'Apoio' AND voluntario_id = ?
+                """, (solicitacao['substituto_id'], solicitacao['substituto_nome'], solicitacao['data_culto'], solicitacao['solicitante_id']))
+
+            # 3. Atualiza o status da solicitação para 'aprovada'
+            c.execute("UPDATE solicitacoes_troca SET status = ? WHERE id = ?", (novo_status, solicitacao_id))
+            
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Erro ao aprovar solicitação: {e}")
+            conn.rollback()
+            return False
+    
+    elif novo_status == 'negada':
+        try:
+            c.execute("UPDATE solicitacoes_troca SET status = ? WHERE id = ?", (novo_status, solicitacao_id))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Erro ao negar solicitação: {e}")
+            conn.rollback()
+            return False
+    
+    return False

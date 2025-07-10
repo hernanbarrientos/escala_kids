@@ -1,4 +1,8 @@
 streamlit
 pandas
-openpyxl
 bcrypt
+python-dateutil
+openpyxl
+weasyprint
+numpy
+streamlit-js-eval
