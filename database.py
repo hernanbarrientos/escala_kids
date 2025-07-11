@@ -22,13 +22,14 @@ def criar_tabelas(conn):
         role TEXT DEFAULT 'voluntario'
     )''')
 
-    # Cria a tabela de disponibilidades
+    # Cria a tabela de disponibilidades COM A NOVA COLUNA
     c.execute('''CREATE TABLE IF NOT EXISTS disponibilidades (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         voluntario_id INTEGER NOT NULL,
         datas_disponiveis TEXT,
         ceia_passada TEXT,
         mes_referencia TEXT NOT NULL,
+        indisponivel_o_mes_todo BOOLEAN DEFAULT FALSE, -- COLUNA ADICIONADA AQUI
         timestamp_registro DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(voluntario_id, mes_referencia),
         FOREIGN KEY(voluntario_id) REFERENCES voluntarios(id)
@@ -416,3 +417,27 @@ def processar_solicitacao(conn, solicitacao_id, novo_status):
             return False
     
     return False
+
+# --- FUNÇÕES PARA INDISPONIBILIDADE MENSAL ---
+def get_status_indisponibilidade_mes(conn, voluntario_id, mes_referencia):
+    c = conn.cursor()
+    c.execute("SELECT indisponivel_o_mes_todo FROM disponibilidades WHERE voluntario_id = ? AND mes_referencia = ?", (voluntario_id, mes_referencia))
+    result = c.fetchone()
+    return result['indisponivel_o_mes_todo'] if result else False
+
+def set_status_indisponibilidade_mes(conn, voluntario_id, mes_referencia, status: bool):
+    c = conn.cursor()
+    try:
+        c.execute("UPDATE disponibilidades SET indisponivel_o_mes_todo = ? WHERE voluntario_id = ? AND mes_referencia = ?", (status, voluntario_id, mes_referencia))
+        if c.rowcount == 0:
+            c.execute("INSERT INTO disponibilidades (voluntario_id, mes_referencia, indisponivel_o_mes_todo) VALUES (?, ?, ?)", (voluntario_id, mes_referencia, status))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao definir status de indisponibilidade mensal: {e}")
+        conn.rollback()
+        return False
+
+def get_ids_indisponiveis_para_o_mes(conn, mes_referencia):
+    df = pd.read_sql_query("SELECT voluntario_id FROM disponibilidades WHERE mes_referencia = ? AND indisponivel_o_mes_todo = TRUE", conn, params=(mes_referencia,))
+    return df['voluntario_id'].tolist()
