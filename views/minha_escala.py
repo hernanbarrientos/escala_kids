@@ -6,14 +6,17 @@ import utils
 from datetime import datetime, date
 
 def show_page():
-    # --- Verificação de Login e Permissão ---
-    if not st.session_state.get('logged_in') or st.session_state.user_role != 'voluntario':
-        st.error("Você precisa estar logado como voluntário para acessar esta página.")
-        if st.button("Ir para Login"):
-            st.session_state.page = 'login'
-            st.rerun()
-        st.stop()
-    
+#     # --- Verificação de Login e Permissão ---
+#     if not st.session_state.get('logged_in') or st.session_state.user_role != 'voluntario':
+#         st.error("Você precisa estar logado como voluntário para acessar esta página.")
+#         if st.button("Ir para Login"):
+#             st.session_state.page = 'login'
+#             st.rerun()
+#         st.stop()
+
+
+# def render_content(): # A função agora se chama render_content
+
     # --- Conteúdo da Página ---
     
     voluntario_info = st.session_state.voluntario_info
@@ -139,6 +142,28 @@ def show_page():
                                         st.warning("Por favor, escreva um comentário.")
             else:
                 st.info("Nenhuma escala anterior encontrada para deixar feedback.")
+    
             
     except Exception as e:
         st.error(f"Ocorreu um erro ao carregar sua escala: {e}")
+
+
+
+    # --- NAVEGAÇÃO MOBILE ---
+    # # Este container só será visível em telas pequenas, graças ao CSS
+    # st.markdown('<div class="mobile-nav">', unsafe_allow_html=True)
+    # with st.container():
+    #     col1, col2, col3 = st.columns(3)
+    #     with col1:
+    #         if st.button("Disponibilidade", use_container_width=True):
+    #             st.session_state.page = 'painel_voluntario'; st.rerun()
+    #     with col2:
+    #         if st.button("Alterar Senha", use_container_width=True):
+    #             st.session_state.page = 'alterar_senha'; st.rerun()
+    #     with col3:
+    #         if st.button("Sair", use_container_width=True):
+    #             for key in list(st.session_state.keys()):
+    #                 del st.session_state[key]
+    #             st.session_state.page = 'login'; st.rerun()
+    # st.markdown('</div>', unsafe_allow_html=True)
+    

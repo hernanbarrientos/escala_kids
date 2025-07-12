@@ -20,50 +20,49 @@ DISPONIBILIDADE_OPCOES = ["Domingo Manhã", "Domingo Noite", "Quinta-feira"]
 
 # --- FUNÇÃO DE RENDERIZAÇÃO DA SIDEBAR ---
 def render_sidebar():
-    """
-    Cria a barra lateral de navegação de forma defensiva, usando .get()
-    para evitar erros de estado (AttributeError, UnboundLocalError).
-    """
+    # A sidebar só aparece para admins
+    if st.session_state.get('user_role') != 'admin':
+        return # Não faz nada se não for admin
+
     with st.sidebar:
         st.title("Ministério Kids")
         st.markdown("---")
-        if st.session_state.get("logged_in"):
-            nome_usuario = st.session_state.get('voluntario_info', {}).get('nome', 'Usuário')
-            st.write(f"Bem-vindo(a), **{nome_usuario}**!")
-            user_role = st.session_state.get('user_role')
-            is_first_login = st.session_state.get('voluntario_info', {}).get('primeiro_acesso') == 1
-            if is_first_login:
-                st.warning("Por favor, crie uma nova senha para ter acesso ao sistema.", icon="🔒")
-            else:
-                if user_role == 'admin':
-                    st.header("Menu do Administrador")
-                    if st.button("Administração", use_container_width=True, type="primary" if st.session_state.get('page') == "painel_admin" else "secondary"):
-                        st.session_state.page = "painel_admin"; st.rerun()
-                    if st.button("Gerar e Editar Escala", use_container_width=True, type="primary" if st.session_state.get('page') == "gerar_escala" else "secondary"):
-                        st.session_state.page = "gerar_escala"; st.rerun()
-                    if st.button("Ver Comentários", use_container_width=True, type="primary" if st.session_state.get('page') == "comentarios" else "secondary"):
-                        st.session_state.page = "comentarios"; st.rerun()
-                    if st.button("Solicitações de Troca", use_container_width=True, type="primary" if st.session_state.get('page') == "solicitacoes_troca" else "secondary"):
-                        st.session_state.page = "solicitacoes_troca"; st.rerun()
-                elif user_role == 'voluntario':
-                    st.header("Menu do Voluntário")
-                    if st.button("Confirmar Disponibilidade", use_container_width=True, type="primary" if st.session_state.get('page') == "painel_voluntario" else "secondary"):
-                        st.session_state.page = "painel_voluntario"; st.rerun()
-                    if st.button("Ver Minha Escala", use_container_width=True, type="primary" if st.session_state.get('page') == "minha_escala" else "secondary"):
-                        st.session_state.page = "minha_escala"; st.rerun()
-                if st.button("Alterar Senha", use_container_width=True, type="primary" if st.session_state.get('page') == "alterar_senha" else "secondary"):
-                    st.session_state.page = "alterar_senha"; st.rerun()
-            st.markdown("---")
-            if user_role == 'admin':
-                with st.expander("Modo Avançado"):
-                    st.toggle("Habilitar Ferramentas de Desenvolvedor", key="dev_mode")
-                st.markdown("---")
-            if st.button("Logout", use_container_width=True):
-                for key in ['logged_in', 'user_role', 'voluntario_info', 'dev_mode']:
-                    if key in st.session_state: del st.session_state[key]
-                st.session_state.page = "login"; st.rerun()
-        else:
-            st.info("Faça o login para acessar o sistema.")
+        
+        nome_usuario = st.session_state.get('voluntario_info', {}).get('nome', 'Admin')
+        st.write(f"Bem-vindo(a), **{nome_usuario}**!")
+        
+        st.header("Menu do Administrador")
+        if st.button("Administração", use_container_width=True, type="primary" if st.session_state.get('page') == "painel_admin" else "secondary"):
+            st.session_state.page = "painel_admin"; st.rerun()
+        if st.button("Gerar e Editar Escala", use_container_width=True, type="primary" if st.session_state.get('page') == "gerar_escala" else "secondary"):
+            st.session_state.page = "gerar_escala"; st.rerun()
+        if st.button("Ver Comentários", use_container_width=True, type="primary" if st.session_state.get('page') == "comentarios" else "secondary"):
+            st.session_state.page = "comentarios"; st.rerun()
+        if st.button("Solicitações de Troca", use_container_width=True, type="primary" if st.session_state.get('page') == "solicitacoes_troca" else "secondary"):
+            st.session_state.page = "solicitacoes_troca"; st.rerun()
+        
+        # Botão de Alterar Senha específico para o admin
+        if st.button("Alterar Senha", use_container_width=True, type="primary" if st.session_state.get('page') == "alterar_senha" else "secondary"):
+            st.session_state.page = "alterar_senha"; st.rerun()
+
+        st.markdown("---")
+        if st.button("🚪 Sair (Logout)", use_container_width=True):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.session_state.page = 'login'
+            st.rerun()
+
+        #     st.markdown("---")
+        #     if user_role == 'admin':
+        #         with st.expander("Modo Avançado"):
+        #             st.toggle("Habilitar Ferramentas de Desenvolvedor", key="dev_mode")
+        #         st.markdown("---")
+        #     if st.button("Logout", use_container_width=True):
+        #         for key in ['logged_in', 'user_role', 'voluntario_info', 'dev_mode']:
+        #             if key in st.session_state: del st.session_state[key]
+        #         st.session_state.page = "login"; st.rerun()
+        # else:
+        #     st.info("Faça o login para acessar o sistema.")
 
 # --- FUNÇÕES DE DATA E LOCALIDADE ---
 def configurar_localidade():
@@ -114,7 +113,7 @@ def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
 
     css_string = """
     @page { 
-        size: 21cm 29.7cm; /* Página em pé (retrato) */
+        size: 21cm 30cm; /* Página em pé (retrato) */
         margin: 0.75cm;
     }
     body { 
@@ -220,3 +219,47 @@ def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
     """
 
     return HTML(string=html_string).write_pdf()
+
+#responsividade
+# NOVA SIDEBAR - apenas para voluntários no desktop
+def render_volunteer_sidebar():
+    """Cria a sidebar de navegação para voluntários, visível apenas em desktop."""
+    with st.sidebar:
+        st.title(f"Olá, {st.session_state.voluntario_info['nome']}!")
+        st.markdown("---")
+        if st.button("Confirmar Disponibilidade", use_container_width=True):
+            st.session_state.page = 'painel_voluntario'
+            st.rerun()
+        if st.button("Ver Minha Escala", use_container_width=True):
+            st.session_state.page = 'minha_escala'
+            st.rerun()
+        if st.button("Alterar Senha", use_container_width=True):
+            st.session_state.page = 'alterar_senha'
+            st.rerun()
+        st.markdown("---")
+        if st.button("🚪 Sair (Logout)", use_container_width=True):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.session_state.page = 'login'
+            st.rerun()
+
+# NOVA BARRA DE NAVEGAÇÃO - apenas para voluntários no celular
+def render_mobile_nav():
+    """Cria a barra de navegação no rodapé, visível apenas em mobile."""
+    st.markdown('<div class="mobile-nav">', unsafe_allow_html=True)
+    cols = st.columns(4)
+    with cols[0]:
+        if st.button("🗓️ Disponibilidade", use_container_width=True, help="Confirmar Disponibilidade"):
+            st.session_state.page = 'painel_voluntario'; st.rerun()
+    with cols[1]:
+        if st.button("📅 Escala", use_container_width=True, help="Ver Minha Escala"):
+            st.session_state.page = 'minha_escala'; st.rerun()
+    with cols[2]:
+        if st.button("🔒 Senha", use_container_width=True, help="Alterar Senha"):
+            st.session_state.page = 'alterar_senha'; st.rerun()
+    with cols[3]:
+        if st.button("🚪 Sair", use_container_width=True, help="Logout"):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.session_state.page = 'login'; st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)

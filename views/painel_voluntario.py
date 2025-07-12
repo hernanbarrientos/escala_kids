@@ -4,13 +4,15 @@ import database as db
 import utils
 
 def show_page():
-    # --- Verificação de Login e Permissão ---
-    if not st.session_state.get('logged_in') or st.session_state.user_role != 'voluntario':
-        st.error("Você precisa estar logado como voluntário para acessar esta página.")
-        if st.button("Ir para Login"):
-            st.session_state.page = 'login'
-            st.rerun()
-        st.stop()
+#     # --- Verificação de Login e Permissão ---
+#     if not st.session_state.get('logged_in') or st.session_state.user_role != 'voluntario':
+#         st.error("Você precisa estar logado como voluntário para acessar esta página.")
+#         if st.button("Ir para Login"):
+#             st.session_state.page = 'login'
+#             st.rerun()
+#         st.stop()
+# def render_content(): # A função agora se chama render_content
+
 
     # --- Conteúdo da Página ---
     voluntario = st.session_state.voluntario_info
@@ -20,7 +22,7 @@ def show_page():
         del st.session_state.disponibilidade_salva_sucesso
 
     nome_voluntario = voluntario.get("nome", "Voluntário")
-    st.title(f"Portal de {nome_voluntario}")
+    # st.title(f"Portal de {nome_voluntario}")
     st.subheader("🗓️ Confirmar Disponibilidade para a Próxima Escala")
 
     disponibilidade_geral = [d.strip() for d in voluntario.get("disponibilidade", "").split(',') if d.strip()]
