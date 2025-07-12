@@ -113,7 +113,7 @@ def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
 
     css_string = """
     @page { 
-        size: 22cm 30cm; /* Página em pé (retrato) */
+        size: 24cm 30cm; /* Página em pé (retrato) */
         margin: 0.75cm;
     }
     body { 
@@ -135,7 +135,7 @@ def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
         gap: 6px; /* Espaço entre as colunas */
     }
     .coluna {
-        flex: 1; /* Faz as colunas terem a mesma largura */
+        flex: 0.9; /* Faz as colunas terem a mesma largura */
         display: flex;
         flex-direction: column;
         gap: 6px; /* Espaço entre os blocos de data */
