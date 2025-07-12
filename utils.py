@@ -113,7 +113,7 @@ def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
 
     css_string = """
     @page { 
-        size: 24cm 31cm; /* Página em pé (retrato) */
+        size: 22cm 35cm; /* Página em pé (retrato) */
         margin: 0.75cm;
     }
     body { 
