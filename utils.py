@@ -113,7 +113,7 @@ def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
 
     css_string = """
     @page { 
-        size: 21cm 30cm; /* Página em pé (retrato) */
+        size: 22cm 30cm; /* Página em pé (retrato) */
         margin: 0.75cm;
     }
     body { 
@@ -161,16 +161,16 @@ def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
         font-weight: bold;
     }
     .tabela_atribuicoes {
-        width: 100%;
+        width: 80%;
         border-collapse: collapse;
     }
     .tabela_atribuicoes td {
-        padding: 4px 8px;
+        padding: 4px 6px;
         border-top: 1px solid #eee; /* Linha sutil entre as atribuições */
     }
     .tabela_atribuicoes .funcao {
         font-weight: bold;
-        width: 40%; /* Ajusta a largura da coluna de função */
+        width: 35%; /* Ajusta a largura da coluna de função */
     }
     """
 
