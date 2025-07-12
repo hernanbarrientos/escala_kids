@@ -113,7 +113,7 @@ def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
 
     css_string = """
     @page { 
-        size: 24cm 30cm; /* Página em pé (retrato) */
+        size: 24cm 28cm; /* Página em pé (retrato) */
         margin: 0.75cm;
     }
     body { 
@@ -123,9 +123,9 @@ def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
     }
     .titulo_principal {
         text-align: center;
-        font-size: 16pt;
+        font-size: 18pt;
         font-weight: bold;
-        margin-bottom: 10px;
+        margin-bottom: 16px;
         margin-top: 0;
     }
     .container_colunas {
@@ -135,10 +135,10 @@ def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
         gap: 6px; /* Espaço entre as colunas */
     }
     .coluna {
-        flex: 1.1; /* Faz as colunas terem a mesma largura */
+        flex: 1; /* Faz as colunas terem a mesma largura */
         display: flex;
         flex-direction: column;
-        gap: 6px; /* Espaço entre os blocos de data */
+        gap: 8px; /* Espaço entre os blocos de data */
     }
     .titulo_coluna {
         background-color: #333;
@@ -157,7 +157,7 @@ def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
     .data_cabecalho {
         background-color: #f2f2f2;
         text-align: center;
-        padding: 2px;
+        padding: 4px;
         font-weight: bold;
     }
     .tabela_atribuicoes {
