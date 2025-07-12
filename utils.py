@@ -135,7 +135,7 @@ def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
         gap: 6px; /* Espaço entre as colunas */
     }
     .coluna {
-        flex: 0.9; /* Faz as colunas terem a mesma largura */
+        flex: 1.1; /* Faz as colunas terem a mesma largura */
         display: flex;
         flex-direction: column;
         gap: 6px; /* Espaço entre os blocos de data */
@@ -161,7 +161,7 @@ def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
         font-weight: bold;
     }
     .tabela_atribuicoes {
-        width: 80%;
+        width: 100%;
         border-collapse: collapse;
     }
     .tabela_atribuicoes td {
@@ -170,7 +170,7 @@ def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
     }
     .tabela_atribuicoes .funcao {
         font-weight: bold;
-        width: 35%; /* Ajusta a largura da coluna de função */
+        width: 40%; /* Ajusta a largura da coluna de função */
     }
     """
 
