@@ -15,7 +15,7 @@ def show_page():
         st.stop()
     
     # --- Conteúdo da Página ---
-    conn = st.session_state.db_conn
+    
     voluntario_info = st.session_state.voluntario_info
     
     # Lógica para exibir a mensagem de sucesso (para feedbacks)
@@ -35,7 +35,7 @@ def show_page():
         st.caption("Mude esta data para o futuro para testar o envio de feedbacks.")
 
     try:
-        minha_escala_df = db.get_escala_por_voluntario(conn, voluntario_info['id'])
+        minha_escala_df = db.get_escala_por_voluntario(voluntario_info['id'])
 
         if minha_escala_df.empty:
             st.info("Você ainda não foi escalado(a) para nenhuma data.")
@@ -79,14 +79,14 @@ def show_page():
                                 if funcao == 'Apoio':
                                     st.warning("A função de Apoio é vinculada à Recepção. Para trocas, solicite na escala de 'Recepção'.", icon="ℹ️")
                                 else:
-                                    solicitacoes_pendentes_df = db.get_solicitacoes_pendentes(conn)
+                                    solicitacoes_pendentes_df = db.get_solicitacoes_pendentes()
                                     ja_solicitado = escala_id in solicitacoes_pendentes_df['escala_original_id'].values
 
                                     if ja_solicitado:
                                         st.info("Você já tem uma solicitação pendente para esta escala.")
                                     else:
                                         with st.form(key=f"form_troca_{escala_id}"):
-                                            todos_voluntarios_df = db.listar_voluntarios(conn)
+                                            todos_voluntarios_df = db.listar_voluntarios()
                                             voluntarios_aptos = todos_voluntarios_df[
                                                 (todos_voluntarios_df['atribuicoes'].str.contains(funcao, na=False)) &
                                                 (todos_voluntarios_df['id'] != voluntario_info['id'])
@@ -100,8 +100,8 @@ def show_page():
                                                 
                                                 if st.form_submit_button("Enviar Solicitação"):
                                                     if substituto_nome:
-                                                        substituto_id = voluntarios_aptos[voluntarios_aptos['nome'] == substituto_nome].iloc[0]['id']
-                                                        db.criar_solicitacao_substituicao(conn, escala_id, voluntario_info['id'], voluntario_info['nome'], substituto_id, substituto_nome, data_culto, funcao)
+                                                        substituto_id = int(voluntarios_aptos[voluntarios_aptos['nome'] == substituto_nome].iloc[0]['id'])
+                                                        db.criar_solicitacao_substituicao(escala_id, voluntario_info['id'], voluntario_info['nome'], substituto_id, substituto_nome, data_culto, funcao)
                                                         st.success("Solicitação de troca enviada com sucesso!")
                                                         st.session_state.form_troca_aberto = None # Fecha o formulário
                                                         st.rerun()
@@ -120,7 +120,7 @@ def show_page():
                     funcao = linha['funcao']
                     
                     with st.expander(f"**{data_culto}** - Função: **{funcao}**"):
-                        feedback_enviado = db.feedback_ja_enviado(conn, voluntario_info['id'], data_culto, funcao)
+                        feedback_enviado = db.feedback_ja_enviado(voluntario_info['id'], data_culto, funcao)
                         
                         if feedback_enviado:
                             st.success("✔️ Você já enviou seu feedback para esta escala específica. Obrigado!")
@@ -130,7 +130,7 @@ def show_page():
                                 comentario = st.text_area("Deixe seu comentário ou sugestão:", key=f"comment_{form_key}", height=100)
                                 if st.form_submit_button("Enviar Feedback"):
                                     if comentario:
-                                        if db.salvar_feedback(conn, voluntario_info['id'], voluntario_info['nome'], data_culto, funcao, comentario):
+                                        if db.salvar_feedback(voluntario_info['id'], voluntario_info['nome'], data_culto, funcao, comentario):
                                             st.session_state.feedback_salvo_sucesso = True
                                             st.rerun()
                                         else:

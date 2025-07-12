@@ -13,7 +13,6 @@ def show_page():
         st.stop()
 
     # --- Conteúdo da Página ---
-    conn = db.conectar_db()
     voluntario = st.session_state.voluntario_info
     
     if 'disponibilidade_salva_sucesso' in st.session_state and st.session_state.disponibilidade_salva_sucesso:
@@ -28,7 +27,7 @@ def show_page():
     opcoes_agrupadas, mes_ref = utils.get_dias_culto_proximo_mes(disponibilidade_geral)
     st.info(f"Atenção: Sua disponibilidade será registrada para a escala de **{mes_ref}**.")
 
-    disponibilidade_salva = db.carregar_disponibilidade(conn, voluntario.get("id"), mes_ref)
+    disponibilidade_salva = db.carregar_disponibilidade(voluntario.get("id"), mes_ref)
     datas_disponiveis_salvas = []
     serviu_ceia_salvo = "Não"
     if disponibilidade_salva:
@@ -37,13 +36,10 @@ def show_page():
             datas_disponiveis_salvas = [d.strip() for d in datas_raw.split(',') if d.strip()]
         serviu_ceia_salvo = disponibilidade_salva.get('ceia_passada', 'Não')
 
-    edicao_liberada = db.get_edicao_liberada(conn, mes_ref)
+    edicao_liberada = db.get_edicao_liberada(mes_ref)
     if not edicao_liberada:
         st.warning(f"As edições para a escala de **{mes_ref}** estão bloqueadas.")
-    # else:
-    #     st.toast(f"As edições para a escala de **{mes_ref}** estão liberadas.", icon="✅")
 
-    # st.markdown("---")
 
     # AJUSTE DE LAYOUT: A pergunta da Ceia foi movida para ANTES da lista de datas.
     ceia_passada_radio_value = st.radio(
@@ -116,10 +112,10 @@ def show_page():
             ]
 
         datas_disponiveis_final = ", ".join(datas_selecionadas_atuais)
-        if db.salvar_disponibilidade(conn, voluntario_id, datas_disponiveis_final, ceia_passada_radio_value, mes_ref):
+        if db.salvar_disponibilidade(voluntario_id, datas_disponiveis_final, ceia_passada_radio_value, mes_ref):
             st.session_state.disponibilidade_salva_sucesso = True
             st.rerun()
         else:
             st.error("Ocorreu um erro ao registrar/atualizar sua disponibilidade.")
 
-    conn.close()
+    

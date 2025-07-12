@@ -1,7 +1,6 @@
 # views/gerar_escala.py
 import streamlit as st
 import pandas as pd
-import random
 import numpy as np
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
@@ -10,13 +9,18 @@ import database as db
 import utils
 from escala_config import NECESSIDADES_ESCALA
 
+# Lista de ordenação final e limpa
+ORDEM_FUNCOES = [
+    "Lider da escala", "Recepção", "Baby Historia", "Baby Auxiliar 1", 
+    "Baby Auxiliar 2", "Apoio", "Inclusão", "Primario/Juvenil", "Auxiliar"
+]
+
 def show_page():
     if not st.session_state.get('logged_in') or st.session_state.user_role != 'admin':
         st.error("Acesso restrito a administradores.")
         st.rerun()
         st.stop()
-
-    conn = st.session_state.db_conn
+    
     st.title("🤖 Gerador e Editor de Escalas")
     st.markdown("---")
 
@@ -34,21 +38,17 @@ def show_page():
     with col_gerar:
         if st.button("💥 Gerar Nova Escala", type="primary", use_container_width=True, help="Gera uma nova escala do zero, substituindo a escala salva para este mês."):
             with st.spinner("Processando regras..."):
-                voluntarios_df = db.listar_voluntarios(conn)
-                
-                ids_travados = db.get_ids_indisponiveis_para_o_mes(conn, mes_referencia)
+                voluntarios_df = db.listar_voluntarios()
+                ids_travados = db.get_ids_indisponiveis_para_o_mes(mes_referencia)
                 if ids_travados:
                     voluntarios_df = voluntarios_df[~voluntarios_df['id'].isin(ids_travados)]
-                    st.caption(f"Nota: {len(ids_travados)} voluntário(s) foram ignorados por estarem marcados como indisponíveis este mês.")
-
-                contagem_df = db.get_contagem_servicos_passados(conn, mes_referencia)
+                contagem_df = db.get_contagem_servicos_passados(mes_referencia)
                 voluntarios_df = pd.merge(voluntarios_df, contagem_df, left_on='id', right_on='voluntario_id', how='left')
                 if 'voluntario_id' in voluntarios_df.columns:
                     voluntarios_df.drop(columns=['voluntario_id'], inplace=True, errors='ignore')
                 voluntarios_df['contagem'].fillna(0, inplace=True)
                 voluntarios_df['contagem'] = voluntarios_df['contagem'].astype(int)
-                
-                disponibilidades_df = db.listar_disponibilidades_por_mes(conn, mes_referencia)
+                disponibilidades_df = db.listar_disponibilidades_por_mes(mes_referencia)
                 escala_gerada = []
                 ano, mes = proximo_mes_data.year, proximo_mes_data.month
                 num_dias_mes = calendar.monthrange(ano, mes)[1]
@@ -104,45 +104,104 @@ def show_page():
                     df_para_salvar = escala_df.rename(columns={'Data': 'data_culto', 'Função': 'funcao', 'Voluntário Escalado': 'voluntario_nome'})
                     colunas_para_salvar = ['mes_referencia', 'data_culto', 'funcao', 'voluntario_id', 'voluntario_nome']
                     df_final = df_para_salvar[colunas_para_salvar]
-                    if db.salvar_escala_gerada(conn, mes_referencia, df_final):
+                    if db.salvar_escala_gerada(mes_referencia, df_final):
                         st.success("✅ Nova escala gerada e salva com sucesso!")
                         st.rerun()
-                    else:
-                        st.error("A escala foi gerada, mas houve um erro ao salvá-la.")
-                else:
-                    st.error("Não foi possível gerar a escala.")
+
+    escala_salva_df = db.listar_escala_completa_por_mes(mes_referencia)
+
+    if not escala_salva_df.empty:
+        escala_salva_df.sort_values('voluntario_nome', na_position='last', inplace=True)
+        escala_salva_df.drop_duplicates(subset=['data_culto', 'funcao'], keep='first', inplace=True)
     
-    escala_salva_df = db.listar_escala_completa_por_mes(conn, mes_referencia)
     escala_pivot = pd.DataFrame()
     if not escala_salva_df.empty:
-        escala_salva_df['voluntario_nome'].fillna("**VAGA NÃO PREENCHIDA**", inplace=True)
-        escala_pivot = escala_salva_df.pivot_table(index='data_culto', columns='funcao', values='voluntario_nome', aggfunc='first').fillna("**VAGA NÃO PREENCHIDA**")
+        escala_pivot = escala_salva_df.pivot_table(index='data_culto', columns='funcao', values='voluntario_nome', aggfunc=lambda x: ' '.join(str(v) for v in x))
+
+    if 'Baby Auxiliar' in escala_pivot.columns:
+        escala_pivot = escala_pivot.drop(columns=['Baby Auxiliar'])
     
+    # --- PONTO CENTRAL DA CORREÇÃO ---
+    if not escala_pivot.empty:
+        # 1. Garante que a coluna 'Apoio' seja sempre um espelho da 'Recepção'
+        # Isso força a regra de negócio diretamente na tabela que será exibida
+        if 'Recepção' in escala_pivot.columns and 'Apoio' in escala_pivot.columns:
+            escala_pivot['Apoio'] = escala_pivot['Recepção']
+
+        # 2. Lógica inteligente de preenchimento que roda DEPOIS da regra de negócio
+        for data_culto, row in escala_pivot.iterrows():
+            tipo_culto = data_culto.split(' - ')[1]
+            
+            # Precisamos considerar 'Apoio' como uma função necessária se 'Recepção' for
+            funcoes_necessarias_base = list(NECESSIDADES_ESCALA.get(tipo_culto, {}).keys())
+            if 'Recepção' in funcoes_necessarias_base:
+                funcoes_necessarias_base.append('Apoio')
+
+            for funcao, valor in row.items():
+                if pd.isna(valor):
+                    if funcao in funcoes_necessarias_base:
+                        escala_pivot.loc[data_culto, funcao] = "**VAGA NÃO PREENCHIDA**"
+                    else:
+                        escala_pivot.loc[data_culto, funcao] = "--NÃO APLICA--"
+    # --- FIM DA CORREÇÃO ---
+
     with col_exportar:
-        if not escala_pivot.empty:
-            pdf_bytes = utils.gerar_pdf_escala(escala_pivot, mes_referencia)
-            st.download_button(label="📄 Baixar Escala em PDF", data=pdf_bytes, file_name=f"escala_kids_{mes_referencia.replace(' de ', '_')}.pdf", mime="application/pdf", use_container_width=True)
+        if not escala_salva_df.empty:
+            df_para_pdf = escala_salva_df.copy()
+            # Garante que a regra Apoio=Recepção também seja aplicada nos dados do PDF
+            if 'Recepção' in df_para_pdf['funcao'].values:
+                recepcao_df = df_para_pdf[df_para_pdf['funcao'] == 'Recepção'].copy()
+                recepcao_df['funcao'] = 'Apoio'
+                df_para_pdf = pd.concat([df_para_pdf[df_para_pdf['funcao'] != 'Apoio'], recepcao_df]).drop_duplicates(subset=['data_culto', 'funcao'], keep='last')
+
+            df_para_pdf['voluntario_nome'].fillna("-", inplace=True)
+            df_para_pdf[['data_str', 'tipo_culto']] = df_para_pdf['data_culto'].str.split(' - ', expand=True)
+            dados_agrupados = {}
+            ordem_colunas_pdf = ["Domingo Manhã", "Domingo Noite", "Quinta-feira"]
+            
+            for tipo_culto in ordem_colunas_pdf:
+                df_culto = df_para_pdf[df_para_pdf['tipo_culto'] == tipo_culto]
+                if not df_culto.empty:
+                    dados_agrupados[tipo_culto] = {}
+                    for data, grupo in df_culto.groupby('data_str'):
+                        grupo_ordenado = grupo.copy()
+                        grupo_ordenado['funcao'] = pd.Categorical(grupo_ordenado['funcao'], categories=ORDEM_FUNCOES, ordered=True)
+                        grupo_ordenado.sort_values('funcao', inplace=True)
+                        dados_agrupados[tipo_culto][data] = list(zip(grupo_ordenado['funcao'], grupo_ordenado['voluntario_nome']))
+
+            pdf_bytes = utils.gerar_pdf_escala(dados_agrupados, mes_referencia)
+            st.download_button(
+                label="📄 Baixar Escala em PDF",
+                data=pdf_bytes,
+                file_name=f"escala_kids_{mes_referencia.replace(' de ', '_')}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
 
     st.markdown("---")
     st.header("🗓️ Editor da Escala Atual")
 
     if escala_pivot.empty:
-        st.warning("Nenhuma escala foi gerada para este mês ainda. Clique em 'Gerar Nova Escala' acima.")
+        st.warning("Nenhuma escala foi gerada para este mês ainda.")
     else:
-        voluntarios_df_editor = db.listar_voluntarios(conn)
-        ids_travados_editor = db.get_ids_indisponiveis_para_o_mes(conn, mes_referencia)
+        voluntarios_df_editor = db.listar_voluntarios()
+        ids_travados_editor = db.get_ids_indisponiveis_para_o_mes(mes_referencia)
         if ids_travados_editor:
             voluntarios_df_editor = voluntarios_df_editor[~voluntarios_df_editor['id'].isin(ids_travados_editor)]
         
         opcoes_por_funcao = {}
         todas_as_funcoes = set(escala_pivot.columns)
-        todas_as_funcoes.add("Apoio")
+        
         for funcao in todas_as_funcoes:
+            if funcao == "--NÃO APLICA--": continue
             base_funcao = funcao.replace(" 1", "").replace(" 2", "")
             voluntarios_aptos = voluntarios_df_editor[voluntarios_df_editor['atribuicoes'].str.contains(base_funcao, na=False)]['nome'].tolist()
             opcoes_por_funcao[funcao] = ["**VAGA NÃO PREENCHIDA**"] + sorted(voluntarios_aptos)
+        
+        # Garante que as opções do Apoio sejam as mesmas da Recepção
         if 'Recepção' in opcoes_por_funcao:
             opcoes_por_funcao['Apoio'] = opcoes_por_funcao['Recepção']
+
         configuracao_colunas = {}
         for coluna in escala_pivot.columns:
             if coluna in opcoes_por_funcao:
@@ -153,18 +212,23 @@ def show_page():
 
         if st.button("💾 Salvar Alterações Manuais", type="primary"):
             escala_long_format = escala_editada_df.reset_index().melt(id_vars='data_culto', var_name='funcao', value_name='voluntario_nome')
+            
+            escala_long_format.replace("--NÃO APLICA--", pd.NA, inplace=True)
+            
+            # Força a regra de negócio Apoio=Recepção ANTES de salvar
             for index, row in escala_long_format.iterrows():
                 if row['funcao'] == 'Recepção':
                     apoio_index = escala_long_format[(escala_long_format['data_culto'] == row['data_culto']) & (escala_long_format['funcao'] == 'Apoio')].index
                     if not apoio_index.empty:
                         escala_long_format.loc[apoio_index, 'voluntario_nome'] = row['voluntario_nome']
+
+            escala_long_format.replace("**VAGA NÃO PREENCHIDA**", pd.NA, inplace=True)
+            
             mapa_nome_id = pd.Series(voluntarios_df_editor.id.values, index=voluntarios_df_editor.nome).to_dict()
             escala_long_format['voluntario_id'] = escala_long_format['voluntario_nome'].map(mapa_nome_id)
             escala_long_format['mes_referencia'] = mes_referencia
             df_final_para_salvar = escala_long_format[['mes_referencia', 'data_culto', 'funcao', 'voluntario_id', 'voluntario_nome']]
             
-            if db.salvar_escala_gerada(conn, mes_referencia, df_final_para_salvar):
+            if db.salvar_escala_gerada(mes_referencia, df_final_para_salvar):
                 st.success("Alterações manuais na escala foram salvas com sucesso!")
                 st.rerun()
-            else:
-                st.error("Ocorreu um erro ao salvar as alterações manuais.")

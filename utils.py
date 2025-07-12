@@ -7,24 +7,16 @@ from dateutil.relativedelta import relativedelta
 import calendar
 import bcrypt
 import io
+import pandas as pd
 from weasyprint import HTML, CSS
 
 # --- CONSTANTES DA APLICAÇÃO ---
 ATRIBUICOES_LISTA = [
-    "Lider da escala",
-    "Recepção",
-    "Auxiliar",
-    "Baby Historia",
-    "Primario/Juvenil",
-    "Inclusão",
-    "Baby Auxiliar",    
+    "Lider da escala", "Recepção", "Auxiliar", "Baby Historia",
+    "Primario/Juvenil", "Inclusão", "Baby Auxiliar",    
 ]
 
-DISPONIBILIDADE_OPCOES = [
-    "Domingo Manhã",  
-    "Domingo Noite", 
-    "Quinta-feira"
-]
+DISPONIBILIDADE_OPCOES = ["Domingo Manhã", "Domingo Noite", "Quinta-feira"]
 
 # --- FUNÇÃO DE RENDERIZAÇÃO DA SIDEBAR ---
 def render_sidebar():
@@ -35,96 +27,65 @@ def render_sidebar():
     with st.sidebar:
         st.title("Ministério Kids")
         st.markdown("---")
-
         if st.session_state.get("logged_in"):
             nome_usuario = st.session_state.get('voluntario_info', {}).get('nome', 'Usuário')
             st.write(f"Bem-vindo(a), **{nome_usuario}**!")
-            
             user_role = st.session_state.get('user_role')
             is_first_login = st.session_state.get('voluntario_info', {}).get('primeiro_acesso') == 1
-            
             if is_first_login:
                 st.warning("Por favor, crie uma nova senha para ter acesso ao sistema.", icon="🔒")
             else:
                 if user_role == 'admin':
                     st.header("Menu do Administrador")
                     if st.button("Administração", use_container_width=True, type="primary" if st.session_state.get('page') == "painel_admin" else "secondary"):
-                        st.session_state.page = "painel_admin"
-                        st.rerun()
+                        st.session_state.page = "painel_admin"; st.rerun()
                     if st.button("Gerar e Editar Escala", use_container_width=True, type="primary" if st.session_state.get('page') == "gerar_escala" else "secondary"):
-                        st.session_state.page = "gerar_escala"
-                        st.rerun()
+                        st.session_state.page = "gerar_escala"; st.rerun()
                     if st.button("Ver Comentários", use_container_width=True, type="primary" if st.session_state.get('page') == "comentarios" else "secondary"):
-                        st.session_state.page = "comentarios"
-                        st.rerun()
+                        st.session_state.page = "comentarios"; st.rerun()
                     if st.button("Solicitações de Troca", use_container_width=True, type="primary" if st.session_state.get('page') == "solicitacoes_troca" else "secondary"):
-                        st.session_state.page = "solicitacoes_troca"
-                        st.rerun()
-
+                        st.session_state.page = "solicitacoes_troca"; st.rerun()
                 elif user_role == 'voluntario':
                     st.header("Menu do Voluntário")
                     if st.button("Confirmar Disponibilidade", use_container_width=True, type="primary" if st.session_state.get('page') == "painel_voluntario" else "secondary"):
-                        st.session_state.page = "painel_voluntario"
-                        st.rerun()
+                        st.session_state.page = "painel_voluntario"; st.rerun()
                     if st.button("Ver Minha Escala", use_container_width=True, type="primary" if st.session_state.get('page') == "minha_escala" else "secondary"):
-                        st.session_state.page = "minha_escala"
-                        st.rerun()
-
+                        st.session_state.page = "minha_escala"; st.rerun()
                 if st.button("Alterar Senha", use_container_width=True, type="primary" if st.session_state.get('page') == "alterar_senha" else "secondary"):
-                    st.session_state.page = "alterar_senha"
-                    st.rerun()
-            
+                    st.session_state.page = "alterar_senha"; st.rerun()
             st.markdown("---")
             if user_role == 'admin':
                 with st.expander("Modo Avançado"):
                     st.toggle("Habilitar Ferramentas de Desenvolvedor", key="dev_mode")
                 st.markdown("---")
-
             if st.button("Logout", use_container_width=True):
-                keys_to_clear = ['logged_in', 'user_role', 'voluntario_info', 'dev_mode']
-                for key in keys_to_clear:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.session_state.page = "login"
-                st.rerun()
+                for key in ['logged_in', 'user_role', 'voluntario_info', 'dev_mode']:
+                    if key in st.session_state: del st.session_state[key]
+                st.session_state.page = "login"; st.rerun()
         else:
             st.info("Faça o login para acessar o sistema.")
 
 # --- FUNÇÕES DE DATA E LOCALIDADE ---
 def configurar_localidade():
-    """Define a localidade para português para obter nomes de meses corretos."""
-    try:
-        locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
+    try: locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
     except locale.Error:
-        try:
-            locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil')
-        except locale.Error:
-            print("Localidade pt_BR não encontrada, usando padrão do sistema.")
+        try: locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil')
+        except locale.Error: print("Localidade pt_BR não encontrada.")
 
 def get_dias_culto_proximo_mes(disponibilidade_geral_voluntario: list = None):
-    """
-    Gera um dicionário de opções de culto para o próximo mês, filtrado pela
-    disponibilidade geral do voluntário.
-    """
     configurar_localidade()
-    
     if disponibilidade_geral_voluntario is None:
         disponibilidade_geral_voluntario = DISPONIBILIDADE_OPCOES
-    
     hoje = datetime.now()
     proximo_mes_data = hoje + relativedelta(months=1)
-    ano = proximo_mes_data.year
-    mes = proximo_mes_data.month
+    ano, mes = proximo_mes_data.year, proximo_mes_data.month
     nome_mes_ref = proximo_mes_data.strftime("%B").capitalize()
-
     opcoes_agrupadas = defaultdict(list)
     num_dias = calendar.monthrange(ano, mes)[1]
-
     for dia in range(1, num_dias + 1):
         data_atual = datetime(ano, mes, dia)
         dia_formatado = data_atual.strftime('%d/%m')
         dia_da_semana = data_atual.weekday()
-
         if dia_da_semana == 3 and "Quinta-feira" in disponibilidade_geral_voluntario:
             opcoes_agrupadas["Quinta-feira"].append(dia_formatado)
         elif dia_da_semana == 6:
@@ -132,67 +93,130 @@ def get_dias_culto_proximo_mes(disponibilidade_geral_voluntario: list = None):
                 opcoes_agrupadas["Domingo Manhã"].append(dia_formatado)
             if "Domingo Noite" in disponibilidade_geral_voluntario:
                 opcoes_agrupadas["Domingo Noite"].append(dia_formatado)
-
     return dict(opcoes_agrupadas), f"{nome_mes_ref} de {ano}"
 
 # --- FUNÇÕES DE SEGURANÇA (SENHAS) ---
 def hash_password(password):
-    """
-    Gera um hash bcrypt da senha fornecida.
-    """
-    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    return hashed.decode('utf-8')
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 def check_password(password, hashed_password):
-    """
-    Verifica se a senha fornecida corresponde ao hash armazenado.
-    """
-    try:
-        return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
-    except (ValueError, TypeError):
-        return False
+    try: return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+    except (ValueError, TypeError): return False
 
-# --- FUNÇÃO DE GERAÇÃO DE PDF ---
-def gerar_pdf_escala(escala_pivot_df, mes_referencia):
+# --- NOVA E FINAL FUNÇÃO DE GERAÇÃO DE PDF ---
+def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
     """
-    Gera um PDF da escala a partir de um DataFrame pivotado, usando HTML e CSS.
+    Gera um PDF da escala em 3 colunas, formato retrato, usando HTML e WeasyPrint.
     """
+    
+    # Extrai somente o "MÊS / ANO"
+    titulo_pdf = mes_referencia.replace(' de ', ' / ').upper()
+
     css_string = """
-    @page { size: A4 landscape; margin: 0.5cm; }
-    body { font-family: sans-serif; }
-    h1 { text-align: center; color: #333; }
-    .escala-container { display: flex; justify-content: center; gap: 10px; }
-    .coluna-dia { display: flex; flex-direction: column; gap: 10px; flex-basis: 32%; }
-    .titulo-coluna { padding: 8px; font-weight: bold; text-align: center; color: white; border-radius: 5px; }
-    .domingo-manha { background-color: #FCE5CD; color: #333;}
-    .domingo-noite { background-color: #FFF2CC; color: #333;}
-    .quinta { background-color: #DDEBF7; color: #333;}
-    .bloco-escala { display: flex; border: 1px solid #ccc; border-radius: 5px; overflow: hidden; }
-    .data-vertical { writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; font-weight: bold; padding: 5px; background-color: #f2f2f2; flex-shrink: 0; }
-    .atribuicoes-lista { padding: 10px; width: 100%;}
-    table { width: 100%; border-collapse: collapse; }
-    td { padding: 4px; }
-    .funcao { font-weight: bold; }
+    @page { 
+        size: 21cm 29.7cm; /* Página em pé (retrato) */
+        margin: 0.75cm;
+    }
+    body { 
+        font-family: Arial, sans-serif; 
+        font-size: 7pt;
+        color: #333;
+    }
+    .titulo_principal {
+        text-align: center;
+        font-size: 16pt;
+        font-weight: bold;
+        margin-bottom: 10px;
+        margin-top: 0;
+    }
+    .container_colunas {
+        display: flex;
+        justify-content: space-between; /* Espaçamento entre as colunas */
+        align-items: flex-start;
+        gap: 6px; /* Espaço entre as colunas */
+    }
+    .coluna {
+        flex: 1; /* Faz as colunas terem a mesma largura */
+        display: flex;
+        flex-direction: column;
+        gap: 6px; /* Espaço entre os blocos de data */
+    }
+    .titulo_coluna {
+        background-color: #333;
+        color: white;
+        text-align: center;
+        padding: 4px;
+        font-weight: bold;
+        border-radius: 5px;
+        font-size: 8pt;
+    }
+    .bloco_data {
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        overflow: hidden; /* Garante que o conteúdo não saia das bordas arredondadas */
+    }
+    .data_cabecalho {
+        background-color: #f2f2f2;
+        text-align: center;
+        padding: 2px;
+        font-weight: bold;
+    }
+    .tabela_atribuicoes {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .tabela_atribuicoes td {
+        padding: 4px 8px;
+        border-top: 1px solid #eee; /* Linha sutil entre as atribuições */
+    }
+    .tabela_atribuicoes .funcao {
+        font-weight: bold;
+        width: 40%; /* Ajusta a largura da coluna de função */
+    }
     """
-    html_string = f"<h1>Escala Ministério Kids - {mes_referencia.replace(' de ', ' / ')}</h1>"
-    html_string += '<div class="escala-container">'
-    dias_semana_ordem = ["Domingo Manhã", "Domingo Noite", "Quinta-feira"]
-    for dia_semana in dias_semana_ordem:
-        datas_do_dia = sorted([d for d in escala_pivot_df.index if dia_semana in d])
-        if not datas_do_dia:
-            continue
-        classe_css = dia_semana.lower().replace("ã", "a").replace("-", "")
-        html_string += f'<div class="coluna-dia"><div class="titulo-coluna {classe_css}">{dia_semana}</div>'
-        for data_culto in datas_do_dia:
-            data_curta = data_culto.split(' ')[0]
-            html_string += '<div class="bloco-escala">'
-            html_string += f'<div class="data-vertical">{data_curta}</div>'
-            html_string += '<div class="atribuicoes-lista"><table>'
-            for funcao, voluntario in escala_pivot_df.loc[data_culto].items():
-                if voluntario and voluntario != "**VAGA NÃO PREENCHIDA**":
-                     html_string += f'<tr><td class="funcao">{funcao}</td><td>= {voluntario}</td></tr>'
-            html_string += '</table></div></div>'
-        html_string += '</div>'
-    html_string += '</div>'
-    pdf_bytes = HTML(string=html_string).write_pdf(stylesheets=[CSS(string=css_string)])
-    return pdf_bytes
+
+    # Monta o HTML do corpo do PDF
+    html_colunas = ""
+    ordem_colunas = ["Domingo Manhã", "Domingo Noite", "Quinta-feira"]
+
+    for nome_coluna in ordem_colunas:
+        html_colunas += '<div class="coluna">'
+        html_colunas += f'<div class="titulo_coluna">{nome_coluna.upper()}</div>'
+        
+        # Verifica se existe dados para esta coluna
+        if nome_coluna in dados_agrupados:
+            # Ordena as datas para garantir que apareçam em ordem cronológica
+            datas_ordenadas = sorted(dados_agrupados[nome_coluna].keys())
+
+            for data in datas_ordenadas:
+                html_colunas += '<div class="bloco_data">'
+                html_colunas += f'<div class="data_cabecalho">{data}/{titulo_pdf.split(" / ")[1]}</div>'
+                html_colunas += '<table class="tabela_atribuicoes">'
+                
+                # Pega a lista de atribuições para a data
+                atribuicoes = dados_agrupados[nome_coluna][data]
+                for funcao, voluntario in atribuicoes:
+                    html_colunas += f'<tr><td class="funcao">{funcao}</td><td>{voluntario}</td></tr>'
+                
+                html_colunas += '</table></div>'
+        
+        html_colunas += '</div>'
+
+
+    # Monta o documento HTML final
+    html_string = f"""
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <title>Escala {mes_referencia}</title>
+        <style>{css_string}</style>
+    </head>
+    <body>
+        <div class="titulo_principal">{titulo_pdf}</div>
+        <div class="container_colunas">{html_colunas}</div>
+    </body>
+    </html>
+    """
+
+    return HTML(string=html_string).write_pdf()

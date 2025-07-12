@@ -16,7 +16,7 @@ def show_page():
         st.stop()
 
     # --- Conteúdo da Página ---
-    conn = db.conectar_db()
+    
     voluntario_info = st.session_state.voluntario_info
 
     # Centraliza o formulário na tela
@@ -47,7 +47,7 @@ def show_page():
                     else:
                         try:
                             # Chama a função do banco que salva a senha criptografada
-                            db.alterar_senha_e_status(conn, voluntario_info['id'], nova_senha)
+                            db.alterar_senha_e_status(voluntario_info['id'], nova_senha)
                             
                             # Atualiza a informação na sessão para refletir a mudança
                             st.session_state.voluntario_info['primeiro_acesso'] = 0
@@ -64,4 +64,3 @@ def show_page():
 
                         except Exception as e:
                             st.error(f"Ocorreu um erro ao salvar a senha: {e}")
-    conn.close()
