@@ -8,7 +8,7 @@ NECESSIDADES_ESCALA = {
     "Quinta-feira": {
         "Recepção": 1,
         "Baby Historia": 1,
-        "Baby Auxiliar": 1,
+        "Baby Auxiliar 1": 1,
         "Primario/Juvenil": 1,
         "Inclusão": 1,
         "Auxiliar": 1

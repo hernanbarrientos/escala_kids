@@ -1,443 +1,288 @@
 # database.py
-import sqlite3
+import streamlit as st
 import pandas as pd
 import utils
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 
-def conectar_db():
-    conn = sqlite3.connect("voluntarios.db", check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+@st.cache_resource
+def get_engine():
+    """Cria e armazena em cache o engine de conexão SQLAlchemy para performance."""
+    try:
+        db_url = st.secrets["DATABASE_URL"]
+        return create_engine(db_url)
+    except Exception as e:
+        st.error(f"Erro crítico ao configurar a conexão com o banco de dados: {e}")
+        st.error("Verifique se a variável 'DATABASE_URL' está configurada corretamente nos segredos do Streamlit.")
+        st.stop()
 
-def criar_tabelas(conn):
-    c = conn.cursor()
-    # Cria a tabela de voluntários
-    c.execute('''CREATE TABLE IF NOT EXISTS voluntarios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT NOT NULL,
-        usuario TEXT UNIQUE NOT NULL COLLATE NOCASE,
-        senha TEXT NOT NULL,
-        atribuicoes TEXT,
-        disponibilidade TEXT,
-        primeiro_acesso INTEGER DEFAULT 1,
-        role TEXT DEFAULT 'voluntario'
-    )''')
+def criar_tabelas():
+    """
+    Cria todas as tabelas necessárias no banco de dados se elas não existirem.
+    Usa um bloco de transação único para garantir a atomicidade da criação.
+    """
+    engine = get_engine()
+    try:
+        with engine.begin() as conn: # Bloco de transação único
+            conn.execute(text("CREATE TABLE IF NOT EXISTS voluntarios (id SERIAL PRIMARY KEY, nome TEXT NOT NULL, usuario TEXT UNIQUE NOT NULL, senha TEXT NOT NULL, atribuicoes TEXT, disponibilidade TEXT, primeiro_acesso INTEGER DEFAULT 1, role TEXT DEFAULT 'voluntario')"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_voluntarios_usuario_case_insensitive ON voluntarios (LOWER(usuario));"))
+            conn.execute(text("CREATE TABLE IF NOT EXISTS disponibilidades (id SERIAL PRIMARY KEY, voluntario_id INTEGER NOT NULL REFERENCES voluntarios(id) ON DELETE CASCADE, datas_disponiveis TEXT, ceia_passada TEXT, mes_referencia TEXT NOT NULL, indisponivel_o_mes_todo BOOLEAN DEFAULT FALSE, timestamp_registro TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, UNIQUE(voluntario_id, mes_referencia))"))
+            conn.execute(text("CREATE TABLE IF NOT EXISTS configuracoes_escalas (id SERIAL PRIMARY KEY, mes_referencia TEXT NOT NULL UNIQUE, edicao_liberada BOOLEAN DEFAULT FALSE, ultima_atualizacao TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)"))
+            conn.execute(text("CREATE TABLE IF NOT EXISTS escala_gerada (id SERIAL PRIMARY KEY, mes_referencia TEXT NOT NULL, data_culto TEXT NOT NULL, funcao TEXT NOT NULL, voluntario_id INTEGER REFERENCES voluntarios(id) ON DELETE SET NULL, voluntario_nome TEXT)"))
+            conn.execute(text("CREATE TABLE IF NOT EXISTS solicitacoes_troca (id SERIAL PRIMARY KEY, escala_original_id INTEGER NOT NULL, solicitante_id INTEGER NOT NULL, substituto_id INTEGER NOT NULL, solicitante_nome TEXT NOT NULL, substituto_nome TEXT NOT NULL, data_culto TEXT NOT NULL, funcao TEXT NOT NULL, status TEXT DEFAULT 'pendente', timestamp_solicitacao TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(escala_original_id) REFERENCES escala_gerada(id) ON DELETE CASCADE, FOREIGN KEY(solicitante_id) REFERENCES voluntarios(id) ON DELETE CASCADE, FOREIGN KEY(substituto_id) REFERENCES voluntarios(id) ON DELETE CASCADE)"))
+            conn.execute(text("CREATE TABLE IF NOT EXISTS feedbacks (id SERIAL PRIMARY KEY, voluntario_id INTEGER NOT NULL REFERENCES voluntarios(id) ON DELETE CASCADE, voluntario_nome TEXT NOT NULL, data_culto TEXT NOT NULL, funcao TEXT NOT NULL, comentario TEXT NOT NULL, status TEXT DEFAULT 'novo', timestamp_criacao TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)"))
+            
+            # Cria o usuário admin se não existir
+            result = conn.execute(text("SELECT COUNT(*) FROM voluntarios WHERE usuario ILIKE :user"), {'user': 'admin'}).scalar_one()
+            if result == 0:
+                senha_hash = utils.hash_password("admin123")
+                conn.execute(text("INSERT INTO voluntarios (nome, usuario, senha, primeiro_acesso, role) VALUES (:nome, :user, :senha, 0, 'admin')"), {'nome': 'Administrador', 'user': 'admin', 'senha': senha_hash})
+    except Exception as e:
+        print(f"Erro ao criar tabelas: {e}")
 
-    # Cria a tabela de disponibilidades COM A NOVA COLUNA
-    c.execute('''CREATE TABLE IF NOT EXISTS disponibilidades (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        voluntario_id INTEGER NOT NULL,
-        datas_disponiveis TEXT,
-        ceia_passada TEXT,
-        mes_referencia TEXT NOT NULL,
-        indisponivel_o_mes_todo BOOLEAN DEFAULT FALSE, -- COLUNA ADICIONADA AQUI
-        timestamp_registro DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(voluntario_id, mes_referencia),
-        FOREIGN KEY(voluntario_id) REFERENCES voluntarios(id)
-    )''')
+def adicionar_voluntario(nome, usuario, senha, atribuicoes, disponibilidade, role='voluntario'):
+    """Adiciona um novo voluntário ao banco de dados."""
+    engine = get_engine()
+    with engine.begin() as conn: # Bloco de transação único
+        hashed_senha = utils.hash_password(senha)
+        conn.execute(text("INSERT INTO voluntarios (nome, usuario, senha, atribuicoes, disponibilidade, primeiro_acesso, role) VALUES (:n, :u, :s, :a, :d, 1, :r)"), {'n': nome, 'u': usuario, 's': hashed_senha, 'a': atribuicoes, 'd': disponibilidade, 'r': role})
 
-    # Cria a tabela de configurações
-    c.execute('''CREATE TABLE IF NOT EXISTS configuracoes_escalas (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        mes_referencia TEXT NOT NULL UNIQUE,
-        edicao_liberada BOOLEAN DEFAULT FALSE,
-        ultima_atualizacao DATETIME DEFAULT CURRENT_TIMESTAMP
-    )''')
-    conn.commit()
+def editar_voluntario(vol_id, nome, usuario, senha, atribuicoes, disponibilidade, role):
+    """Edita os dados de um voluntário existente."""
+    engine = get_engine()
+    with engine.begin() as conn: # Bloco de transação único
+        query_parts = ["nome = :nome", "usuario = :usuario", "atribuicoes = :atribuicoes", "disponibilidade = :disponibilidade", "role = :role"]
+        params = {'vol_id': vol_id, 'nome': nome, 'usuario': usuario, 'atribuicoes': atribuicoes, 'disponibilidade': disponibilidade, 'role': role}
+        if senha:
+            query_parts.append("senha = :senha")
+            params['senha'] = utils.hash_password(senha)
+        query = f"UPDATE voluntarios SET {', '.join(query_parts)} WHERE id = :vol_id"
+        conn.execute(text(query), params)
 
-    # --- NOVA TABELA PARA GERENCIAR SOLICITAÇÕES DE TROCA ---
-    c.execute('''CREATE TABLE IF NOT EXISTS solicitacoes_troca (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        escala_original_id INTEGER NOT NULL,
-        solicitante_id INTEGER NOT NULL,
-        solicitante_nome TEXT NOT NULL,
-        substituto_id INTEGER NOT NULL,
-        substituto_nome TEXT NOT NULL,
-        data_culto TEXT NOT NULL,
-        funcao TEXT NOT NULL,
-        status TEXT DEFAULT 'pendente', -- pendente, aprovada, negada
-        timestamp_solicitacao DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(escala_original_id) REFERENCES escala_gerada(id),
-        FOREIGN KEY(solicitante_id) REFERENCES voluntarios(id),
-        FOREIGN KEY(substituto_id) REFERENCES voluntarios(id)
-    )''')
-    
-    conn.commit()
-
-    # --- LÓGICA DE CRIAÇÃO AUTOMÁTICA DO ADMIN (SEEDING) ---
-    c.execute("SELECT COUNT(*) FROM voluntarios WHERE usuario = ?", ('admin',))
-    admin_existe = c.fetchone()[0]
-
-    if admin_existe == 0:
-        print("Usuário 'admin' não encontrado. Criando usuário administrador padrão...")
-        senha_padrao_hash = utils.hash_password("admin123") # Criptografa a senha padrão
-        c.execute("""
-            INSERT INTO voluntarios (nome, usuario, senha, atribuicoes, disponibilidade, primeiro_acesso, role) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, 
-            ("Administrador", "admin", senha_padrao_hash, "", "", 0, "admin") # primeiro_acesso = 0 para não pedir troca de senha
-        )
-        conn.commit()
-        print("Usuário 'admin' criado com sucesso com a senha 'admin123'.")
-
-    # --- NOVA TABELA PARA ARMAZENAR A ESCALA FINAL E EXIBIR PARA O VOLUNTÁRIO ---
-    c.execute('''CREATE TABLE IF NOT EXISTS escala_gerada (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        mes_referencia TEXT NOT NULL,
-        data_culto TEXT NOT NULL,
-        funcao TEXT NOT NULL,
-        voluntario_id INTEGER,
-        voluntario_nome TEXT,
-        FOREIGN KEY(voluntario_id) REFERENCES voluntarios(id)
-    )''')
-    conn.commit()
-
-    
-    # --- NOVA TABELA PARA FEEDBACKS ---
-    c.execute('''CREATE TABLE IF NOT EXISTS feedbacks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        voluntario_id INTEGER NOT NULL,
-        voluntario_nome TEXT NOT NULL,
-        data_culto TEXT NOT NULL,
-        funcao TEXT NOT NULL, -- <<< COLUNA ADICIONADA
-        comentario TEXT NOT NULL,
-        status TEXT DEFAULT 'novo',
-        timestamp_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(voluntario_id) REFERENCES voluntarios(id)
-    )''')
-    conn.commit()
-
-
-def adicionar_voluntario(conn, nome, usuario, senha, atribuicoes, disponibilidade, role='voluntario'):
-    c = conn.cursor()
-    hashed_senha = utils.hash_password(senha)
-    c.execute("""
-        INSERT INTO voluntarios (nome, usuario, senha, atribuicoes, disponibilidade, primeiro_acesso, role) 
-        VALUES (?, ?, ?, ?, ?, 1, ?)
-        """, (nome, usuario, hashed_senha, atribuicoes, disponibilidade, role))
-    conn.commit()
-
-def editar_voluntario(conn, vol_id, nome, usuario, senha, atribuicoes, disponibilidade, role):
-    c = conn.cursor()
-    query_parts = ["nome = ?", "usuario = ?", "atribuicoes = ?", "disponibilidade = ?", "role = ?"]
-    params = [nome, usuario, atribuicoes, disponibilidade, role]
-
-    if senha:
-        query_parts.append("senha = ?")
-        params.append(utils.hash_password(senha))
-    
-    query = f"UPDATE voluntarios SET {', '.join(query_parts)} WHERE id = ?"
-    params.append(vol_id)
-    c.execute(query, tuple(params))
-    conn.commit()
-
-def autenticar_voluntario(conn, usuario, senha_fornecida):
-    c = conn.cursor()
-    c.execute("SELECT * FROM voluntarios WHERE usuario = ?", (usuario,))
-    user_data = c.fetchone()
-    
-    if user_data:
-        hashed_senha_db = user_data['senha']
-        if utils.check_password(senha_fornecida, hashed_senha_db):
-            return user_data
+def autenticar_voluntario(usuario, senha_fornecida):
+    """Autentica um voluntário, verificando usuário e senha."""
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura, 'connect' é suficiente
+        query = text("SELECT * FROM voluntarios WHERE usuario ILIKE :user")
+        result = conn.execute(query, {'user': usuario}).fetchone()
+        if result:
+            user_data = result._asdict()
+            if utils.check_password(senha_fornecida, user_data['senha']):
+                return user_data
     return None
 
-def alterar_senha_e_status(conn, voluntario_id, nova_senha):
-    c = conn.cursor()
-    hashed_nova_senha = utils.hash_password(nova_senha)
-    c.execute("""
-        UPDATE voluntarios SET senha = ?, primeiro_acesso = 0 WHERE id = ?
-    """, (hashed_nova_senha, voluntario_id))
-    conn.commit()
+def alterar_senha_e_status(voluntario_id, nova_senha):
+    """Altera a senha do voluntário e atualiza o status de primeiro acesso."""
+    engine = get_engine()
+    with engine.begin() as conn: # Bloco de transação único
+        hashed_nova_senha = utils.hash_password(nova_senha)
+        conn.execute(text("UPDATE voluntarios SET senha = :senha, primeiro_acesso = 0 WHERE id = :id"), {'senha': hashed_nova_senha, 'id': voluntario_id})
 
-# --- Manter as demais funções ---
-def excluir_voluntario(conn, vol_id):
-    c = conn.cursor()
-    c.execute("DELETE FROM voluntarios WHERE id = ?", (vol_id,))
-    conn.commit()
+def excluir_voluntario(vol_id):
+    """Exclui um voluntário do banco de dados."""
+    engine = get_engine()
+    with engine.begin() as conn: # Bloco de transação único
+        conn.execute(text("DELETE FROM voluntarios WHERE id = :id"), {'id': vol_id})
 
-def listar_voluntarios(conn):
-    return pd.read_sql_query("SELECT id, nome, usuario, atribuicoes, disponibilidade, primeiro_acesso, role FROM voluntarios", conn)
+def listar_voluntarios():
+    """Retorna um DataFrame com todos os voluntários."""
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura
+        return pd.read_sql("SELECT id, nome, usuario, atribuicoes, disponibilidade, primeiro_acesso, role FROM voluntarios ORDER BY nome", conn)
 
-def get_voluntario_by_id(conn, voluntario_id):
-    c = conn.cursor()
-    c.execute("SELECT * FROM voluntarios WHERE id = ?", (voluntario_id,))
-    return c.fetchone()
+def get_voluntario_by_id(voluntario_id):
+    """Busca um voluntário pelo seu ID."""
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura
+        result = conn.execute(text("SELECT * FROM voluntarios WHERE id = :id"), {'id': voluntario_id}).fetchone()
+        return result._asdict() if result else None
 
-# Funções de disponibilidade
-def salvar_disponibilidade(conn, voluntario_id, datas_disponiveis_str, ceia_passada, mes_ref):
-    c = conn.cursor()
-    try:
-        c.execute("""
-            UPDATE disponibilidades SET datas_disponiveis = ?, ceia_passada = ?, timestamp_registro = CURRENT_TIMESTAMP
-            WHERE voluntario_id = ? AND mes_referencia = ?
-        """, (datas_disponiveis_str, ceia_passada, voluntario_id, mes_ref))
-        if c.rowcount == 0:
-            c.execute("""
-                INSERT INTO disponibilidades (voluntario_id, datas_disponiveis, ceia_passada, mes_referencia)
-                VALUES (?, ?, ?, ?)
-            """, (voluntario_id, datas_disponiveis_str, ceia_passada, mes_ref))
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        print(f"Erro ao salvar/atualizar disponibilidade: {e}")
-        conn.rollback()
-        return False
+def salvar_disponibilidade(voluntario_id, datas_disponiveis_str, ceia_passada, mes_ref):
+    """Salva ou atualiza a disponibilidade de um voluntário para um mês."""
+    engine = get_engine()
+    with engine.begin() as conn: # Bloco de transação único
+        conn.execute(text("""
+            INSERT INTO disponibilidades (voluntario_id, mes_referencia, datas_disponiveis, ceia_passada)
+            VALUES (:vol_id, :mes_ref, :datas, :ceia)
+            ON CONFLICT (voluntario_id, mes_referencia)
+            DO UPDATE SET datas_disponiveis = EXCLUDED.datas_disponiveis, ceia_passada = EXCLUDED.ceia_passada, timestamp_registro = CURRENT_TIMESTAMP;
+        """), {'vol_id': voluntario_id, 'mes_ref': mes_ref, 'datas': datas_disponiveis_str, 'ceia': ceia_passada})
+    return True
 
-def carregar_disponibilidade(conn, voluntario_id, mes_ref):
-    c = conn.cursor()
-    c.execute("""
-        SELECT datas_disponiveis, ceia_passada
-        FROM disponibilidades
-        WHERE voluntario_id = ? AND mes_referencia = ?
-    """, (voluntario_id, mes_ref))
-    result = c.fetchone()
-    
-    # MUDANÇA: Converte o resultado para um dicionário Python antes de retornar
-    if result:
-        return dict(result) # Garante que sempre retornamos um dicionário
-    return None # Retorna None se nada for encontrado
+def carregar_disponibilidade(voluntario_id, mes_ref):
+    """Carrega a disponibilidade salva de um voluntário."""
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura
+        result = conn.execute(text("SELECT datas_disponiveis, ceia_passada FROM disponibilidades WHERE voluntario_id = :id AND mes_referencia = :mes_ref"), {'id': voluntario_id, 'mes_ref': mes_ref}).fetchone()
+        return result._asdict() if result else None
 
-def listar_disponibilidades_por_mes(conn, mes_referencia):
-    return pd.read_sql_query("""
-        SELECT v.id AS voluntario_id, v.nome, d.datas_disponiveis, d.ceia_passada
-        FROM disponibilidades d
-        JOIN voluntarios v ON v.id = d.voluntario_id
-        WHERE d.mes_referencia = ?
-    """, conn, params=(mes_referencia,))
+def listar_disponibilidades_por_mes(mes_referencia):
+    """Lista todas as disponibilidades de um determinado mês."""
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura
+        query = text("SELECT v.id AS voluntario_id, v.nome, d.datas_disponiveis, d.ceia_passada FROM disponibilidades d JOIN voluntarios v ON v.id = d.voluntario_id WHERE d.mes_referencia = :mes_ref")
+        return pd.read_sql(query, conn, params={'mes_ref': mes_referencia})
 
-# Funções de configuração
-def get_edicao_liberada(conn, mes_ref):
-    c = conn.cursor()
-    c.execute("SELECT edicao_liberada FROM configuracoes_escalas WHERE mes_referencia = ?", (mes_ref,))
-    result = c.fetchone()
-    if result: return bool(result['edicao_liberada'])
-    c.execute("INSERT OR IGNORE INTO configuracoes_escalas (mes_referencia, edicao_liberada) VALUES (?, FALSE)", (mes_ref,))
-    conn.commit()
-    return False
+def get_edicao_liberada(mes_ref):
+    """
+    Verifica se a edição da escala está liberada para o mês.
+    Cria a configuração do mês se ela não existir.
+    """
+    engine = get_engine()
+    with engine.begin() as conn: # Transação para garantir consistência na leitura e possível escrita
+        query = text("SELECT edicao_liberada FROM configuracoes_escalas WHERE mes_referencia = :mes_ref")
+        result = conn.execute(query, {'mes_ref': mes_ref}).scalar_one_or_none()
+        if result is None:
+            conn.execute(text("INSERT INTO configuracoes_escalas (mes_referencia, edicao_liberada) VALUES (:mes_ref, FALSE) ON CONFLICT (mes_referencia) DO NOTHING"), {'mes_ref': mes_ref})
+            return False
+        return bool(result)
 
-def set_edicao_liberada(conn, mes_ref, status):
-    c = conn.cursor()
-    try:
-        c.execute("""
-            INSERT INTO configuracoes_escalas (mes_referencia, edicao_liberada, ultima_atualizacao)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(mes_referencia) DO UPDATE SET
-            edicao_liberada = excluded.edicao_liberada, ultima_atualizacao = CURRENT_TIMESTAMP
-        """, (mes_ref, status))
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        print(f"Erro ao definir status de edição: {e}")
-        conn.rollback()
-        return False
+def set_edicao_liberada(mes_ref, status):
+    """Define o status de edição liberada para um mês."""
+    engine = get_engine()
+    with engine.begin() as conn: # Bloco de transação único
+        conn.execute(text("UPDATE configuracoes_escalas SET edicao_liberada = :status, ultima_atualizacao = CURRENT_TIMESTAMP WHERE mes_referencia = :mes_ref"), {'status': status, 'mes_ref': mes_ref})
+    return True
 
-def get_all_meses_configurados(conn):
-    c = conn.cursor()
-    c.execute("SELECT mes_referencia FROM configuracoes_escalas ORDER BY mes_referencia DESC")
-    return c.fetchall()
+def get_all_meses_configurados():
+    """Retorna todos os meses que possuem configuração de escala."""
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura
+        result = conn.execute(text("SELECT mes_referencia FROM configuracoes_escalas ORDER BY mes_referencia DESC")).fetchall()
+        return [row._asdict() for row in result]
 
-# --- NOVAS FUNÇÕES PARA GERENCIAR A ESCALA SALVA ---
-
-def salvar_escala_gerada(conn, mes_referencia, escala_df_pronto):
-    """Apaga a escala antiga do mês e salva a nova que já vem pronta."""
-    c = conn.cursor()
-    try:
-        # Apaga qualquer escala existente para este mês para evitar duplicatas
-        c.execute("DELETE FROM escala_gerada WHERE mes_referencia = ?", (mes_referencia,))
-        
-        # O DataFrame já vem com a coluna 'mes_referencia', então apenas o inserimos
+def salvar_escala_gerada(mes_referencia, escala_df_pronto):
+    """Salva a escala gerada, substituindo qualquer escala anterior para o mesmo mês."""
+    engine = get_engine()
+    with engine.begin() as conn: # Bloco de transação único
+        conn.execute(text("DELETE FROM escala_gerada WHERE mes_referencia = :mes_ref"), {'mes_ref': mes_referencia})
         escala_df_pronto.to_sql('escala_gerada', conn, if_exists='append', index=False)
-        
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Erro ao salvar escala gerada: {e}")
-        conn.rollback()
-        return False
+    return True
 
-def get_escala_por_voluntario(conn, voluntario_id):
-    """Busca no banco todas as datas que um voluntário específico foi escalado, incluindo o ID da escala."""
-    query = """
-        SELECT id, data_culto, funcao
-        FROM escala_gerada
-        WHERE voluntario_id = ?
-        ORDER BY data_culto
-    """
-    return pd.read_sql_query(query, conn, params=(voluntario_id,))
+def get_escala_por_voluntario(voluntario_id):
+    """Busca a escala de um voluntário específico."""
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura
+        query = text("SELECT id, data_culto, funcao FROM escala_gerada WHERE voluntario_id = :id ORDER BY data_culto")
+        return pd.read_sql(query, conn, params={'id': voluntario_id})
 
-def verificar_existencia_escala(conn, mes_referencia):
-    """Verifica se já existe uma escala salva para o mês de referência."""
-    c = conn.cursor()
-    c.execute("SELECT 1 FROM escala_gerada WHERE mes_referencia = ? LIMIT 1", (mes_referencia,))
-    return c.fetchone() is not None
+def verificar_existencia_escala(mes_referencia):
+    """Verifica se já existe uma escala gerada para o mês."""
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura
+        result = conn.execute(text("SELECT 1 FROM escala_gerada WHERE mes_referencia = :mes_ref LIMIT 1"), {'mes_ref': mes_referencia}).scalar_one_or_none()
+    return result is not None
 
-def listar_escala_completa_por_mes(conn, mes_referencia):
-    """Busca a escala completa de um mês para o editor."""
-    return pd.read_sql_query(
-        "SELECT data_culto, funcao, voluntario_nome FROM escala_gerada WHERE mes_referencia = ?",
-        conn,
-        params=(mes_referencia,)
-    )
+def listar_escala_completa_por_mes(mes_referencia):
+    """Retorna a escala completa de um mês como um DataFrame."""
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura
+        query = text("SELECT data_culto, funcao, voluntario_nome FROM escala_gerada WHERE mes_referencia = :mes_ref")
+        return pd.read_sql(query, conn, params={'mes_ref': mes_referencia})
 
-def get_contagem_servicos_passados(conn, mes_referencia_atual):
-    """
-    Conta quantas vezes cada voluntário foi escalado em meses ANTERIORES
-    ao mês de referência atual. Retorna um DataFrame com [voluntario_id, contagem].
-    """
-    query = """
-        SELECT voluntario_id, COUNT(*) as contagem
-        FROM escala_gerada
-        WHERE mes_referencia < ? AND voluntario_id IS NOT NULL
-        GROUP BY voluntario_id
-    """
-    return pd.read_sql_query(query, conn, params=(mes_referencia_atual,))
+def get_contagem_servicos_passados(mes_referencia_atual):
+    """Conta quantos serviços cada voluntário realizou em meses anteriores."""
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura
+        query = text("SELECT voluntario_id, COUNT(*) as contagem FROM escala_gerada WHERE mes_referencia < :mes_ref AND voluntario_id IS NOT NULL GROUP BY voluntario_id")
+        return pd.read_sql(query, conn, params={'mes_ref': mes_referencia_atual})
 
-def salvar_feedback(conn, voluntario_id, voluntario_nome, data_culto, funcao, comentario):
-    """Salva um novo feedback no banco de dados, incluindo a função."""
-    try:
-        c = conn.cursor()
-        # Adicionada a coluna 'funcao' na inserção
-        c.execute("""
-            INSERT INTO feedbacks (voluntario_id, voluntario_nome, data_culto, funcao, comentario)
-            VALUES (?, ?, ?, ?, ?)
-        """, (voluntario_id, voluntario_nome, data_culto, funcao, comentario))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Erro ao salvar feedback: {e}")
-        conn.rollback()
-        return False
+def salvar_feedback(voluntario_id, voluntario_nome, data_culto, funcao, comentario):
+    """Salva um novo feedback de um voluntário."""
+    engine = get_engine()
+    with engine.begin() as conn: # Bloco de transação único
+        conn.execute(text("INSERT INTO feedbacks (voluntario_id, voluntario_nome, data_culto, funcao, comentario) VALUES (:vol_id, :vol_nome, :data, :funcao, :comentario)"), {'vol_id': voluntario_id, 'vol_nome': voluntario_nome, 'data': data_culto, 'funcao': funcao, 'comentario': comentario})
+    return True
 
-def get_feedbacks(conn, status_filter: list = None):
-    """Busca feedbacks, opcionalmente filtrando por uma lista de status."""
-    if status_filter is None:
-        status_filter = ['novo', 'boa_ideia'] # Por padrão, não mostra a lixeira
-    
-    placeholders = ','.join('?' for status in status_filter)
-    query = f"SELECT * FROM feedbacks WHERE status IN ({placeholders}) ORDER BY timestamp_criacao DESC"
-    
-    return pd.read_sql_query(query, conn, params=status_filter)
+def get_feedbacks(status_filter: list = None):
+    """Busca feedbacks, com um filtro opcional de status."""
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura
+        if status_filter is None: status_filter = ['novo', 'boa_ideia', 'resolvido']
+        query = text("SELECT * FROM feedbacks WHERE status IN :status_filter ORDER BY timestamp_criacao DESC")
+        return pd.read_sql(query, conn, params={'status_filter': tuple(status_filter)})
 
-def atualizar_status_feedback(conn, feedback_id, novo_status):
-    """Atualiza o status de um feedback (ex: para 'boa_ideia' ou 'lixeira')."""
-    try:
-        c = conn.cursor()
-        c.execute("UPDATE feedbacks SET status = ? WHERE id = ?", (novo_status, feedback_id))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Erro ao atualizar status do feedback: {e}")
-        conn.rollback()
-        return False
+def atualizar_status_feedback(feedback_id, novo_status):
+    """Atualiza o status de um feedback."""
+    engine = get_engine()
+    with engine.begin() as conn: # Bloco de transação único
+        conn.execute(text("UPDATE feedbacks SET status = :status WHERE id = :id"), {'status': novo_status, 'id': feedback_id})
+    return True
 
-def feedback_ja_enviado(conn, voluntario_id, data_culto, funcao):
-    """Verifica se um voluntário já enviou feedback para um culto e função específicos."""
-    c = conn.cursor()
-    c.execute("SELECT 1 FROM feedbacks WHERE voluntario_id = ? AND data_culto = ? AND funcao = ?", (voluntario_id, data_culto, funcao))
-    return c.fetchone() is not None
+def feedback_ja_enviado(voluntario_id, data_culto, funcao):
+    """Verifica se um feedback para um serviço específico já foi enviado."""
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura
+        result = conn.execute(text("SELECT 1 FROM feedbacks WHERE voluntario_id = :vol_id AND data_culto = :data AND funcao = :funcao"), {'vol_id': voluntario_id, 'data': data_culto, 'funcao': funcao}).scalar_one_or_none()
+    return result is not None
 
-# --- NOVAS FUNÇÕES PARA SOLICITAÇÃO DE TROCA ---
+def criar_solicitacao_substituicao(escala_original_id, solicitante_id, solicitante_nome, substituto_id, substituto_nome, data_culto, funcao):
+    """Cria uma nova solicitação de troca na escala."""
+    engine = get_engine()
+    with engine.begin() as conn: # Bloco de transação único
+        conn.execute(text("INSERT INTO solicitacoes_troca (escala_original_id, solicitante_id, solicitante_nome, substituto_id, substituto_nome, data_culto, funcao) VALUES (:escala_id, :sol_id, :sol_nome, :sub_id, :sub_nome, :data, :funcao)"), {'escala_id': escala_original_id, 'sol_id': solicitante_id, 'sol_nome': solicitante_nome, 'sub_id': substituto_id, 'sub_nome': substituto_nome, 'data': data_culto, 'funcao': funcao})
+    return True
 
-def criar_solicitacao_substituicao(conn, escala_original_id, solicitante_id, solicitante_nome, substituto_id, substituto_nome, data_culto, funcao):
-    """Cria um novo registro de solicitação de troca com status 'pendente'."""
-    try:
-        c = conn.cursor()
-        c.execute("""
-            INSERT INTO solicitacoes_troca (escala_original_id, solicitante_id, solicitante_nome, substituto_id, substituto_nome, data_culto, funcao)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (escala_original_id, solicitante_id, solicitante_nome, substituto_id, substituto_nome, data_culto, funcao))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Erro ao criar solicitação de troca: {e}")
-        conn.rollback()
-        return False
-
-def get_solicitacoes_pendentes(conn):
+def get_solicitacoes_pendentes():
     """Busca todas as solicitações de troca com status 'pendente'."""
-    return pd.read_sql_query("SELECT * FROM solicitacoes_troca WHERE status = 'pendente' ORDER BY timestamp_solicitacao DESC", conn)
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura
+        return pd.read_sql("SELECT * FROM solicitacoes_troca WHERE status = 'pendente' ORDER BY timestamp_solicitacao DESC", conn)
 
-def get_solicitacao_by_id(conn, solicitacao_id):
-    """Busca os detalhes de uma solicitação específica."""
-    c = conn.cursor()
-    c.execute("SELECT * FROM solicitacoes_troca WHERE id = ?", (solicitacao_id,))
-    return c.fetchone()
+def get_solicitacao_by_id(solicitacao_id):
+    """Busca uma solicitação de troca pelo seu ID."""
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura
+        result = conn.execute(text("SELECT * FROM solicitacoes_troca WHERE id = :id"), {'id': solicitacao_id}).fetchone()
+        return result._asdict() if result else None
 
-def processar_solicitacao(conn, solicitacao_id, novo_status):
+def processar_solicitacao(solicitacao_id, novo_status):
     """
-    Processa uma solicitação, aprovando ou negando-a.
-    AGORA COM A LÓGICA INTELIGENTE PARA A REGRA "RECEPÇÃO = APOIO".
+    Processa uma solicitação de troca, aprovando ou rejeitando.
+    Se aprovada, atualiza a escala principal.
     """
-    c = conn.cursor()
-    
-    if novo_status == 'aprovada':
-        try:
-            # Inicia uma transação para garantir que todas as operações funcionem ou falhem juntas
-            c.execute("BEGIN TRANSACTION")
+    engine = get_engine()
+    with engine.begin() as conn: # Transação para garantir consistência entre as tabelas
+        if novo_status == 'aprovada':
+            # Usamos a conexão da transação para buscar a solicitação
+            solicitacao_result = conn.execute(text("SELECT * FROM solicitacoes_troca WHERE id = :id"), {'id': solicitacao_id}).fetchone()
+            if not solicitacao_result: raise ValueError("Solicitação não encontrada.")
+            solicitacao = solicitacao_result._asdict()
             
-            solicitacao = get_solicitacao_by_id(conn, solicitacao_id)
-            if not solicitacao:
-                raise ValueError("Solicitação não encontrada.")
-
-            # --- LÓGICA PRINCIPAL DA TROCA ---
-            # 1. Atualiza a escala original (a que foi solicitada, ex: Recepção) com os dados do substituto
-            c.execute("""
-                UPDATE escala_gerada
-                SET voluntario_id = ?, voluntario_nome = ?
-                WHERE id = ?
-            """, (solicitacao['substituto_id'], solicitacao['substituto_nome'], solicitacao['escala_original_id']))
-
-            # --- NOVA LÓGICA INTELIGENTE ---
-            # 2. Se a função trocada foi 'Recepção', atualiza também a vaga de 'Apoio'
+            conn.execute(text("UPDATE escala_gerada SET voluntario_id = :sub_id, voluntario_nome = :sub_nome WHERE id = :escala_id"), {'sub_id': solicitacao['substituto_id'], 'sub_nome': solicitacao['substituto_nome'], 'escala_id': solicitacao['escala_original_id']})
+            
+            # Lógica extra para Recepção/Apoio
             if solicitacao['funcao'] == 'Recepção':
-                c.execute("""
-                    UPDATE escala_gerada
-                    SET voluntario_id = ?, voluntario_nome = ?
-                    WHERE data_culto = ? AND funcao = 'Apoio' AND voluntario_id = ?
-                """, (solicitacao['substituto_id'], solicitacao['substituto_nome'], solicitacao['data_culto'], solicitacao['solicitante_id']))
+                conn.execute(text("UPDATE escala_gerada SET voluntario_id = :sub_id, voluntario_nome = :sub_nome WHERE data_culto = :data AND funcao = 'Apoio' AND voluntario_id = :sol_id"), {'sub_id': solicitacao['substituto_id'], 'sub_nome': solicitacao['substituto_nome'], 'data': solicitacao['data_culto'], 'sol_id': solicitacao['solicitante_id']})
+        
+        # Atualiza o status da solicitação ao final
+        conn.execute(text("UPDATE solicitacoes_troca SET status = :status WHERE id = :id"), {'status': novo_status, 'id': solicitacao_id})
+    return True
 
-            # 3. Atualiza o status da solicitação para 'aprovada'
-            c.execute("UPDATE solicitacoes_troca SET status = ? WHERE id = ?", (novo_status, solicitacao_id))
-            
-            conn.commit()
-            return True
-        except Exception as e:
-            print(f"Erro ao aprovar solicitação: {e}")
-            conn.rollback()
-            return False
-    
-    elif novo_status == 'negada':
-        try:
-            c.execute("UPDATE solicitacoes_troca SET status = ? WHERE id = ?", (novo_status, solicitacao_id))
-            conn.commit()
-            return True
-        except Exception as e:
-            print(f"Erro ao negar solicitação: {e}")
-            conn.rollback()
-            return False
-    
+def get_status_indisponibilidade_mes(voluntario_id, mes_referencia):
+    """Verifica se um voluntário marcou que está indisponível o mês todo."""
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura
+        result = conn.execute(text("SELECT indisponivel_o_mes_todo FROM disponibilidades WHERE voluntario_id = :id AND mes_referencia = :mes_ref"), {'id': voluntario_id, 'mes_ref': mes_referencia}).fetchone()
+        if result and result._asdict().get('indisponivel_o_mes_todo') is not None:
+            return result._asdict()['indisponivel_o_mes_todo']
     return False
 
-# --- FUNÇÕES PARA INDISPONIBILIDADE MENSAL ---
-def get_status_indisponibilidade_mes(conn, voluntario_id, mes_referencia):
-    c = conn.cursor()
-    c.execute("SELECT indisponivel_o_mes_todo FROM disponibilidades WHERE voluntario_id = ? AND mes_referencia = ?", (voluntario_id, mes_referencia))
-    result = c.fetchone()
-    return result['indisponivel_o_mes_todo'] if result else False
+def set_status_indisponibilidade_mes(voluntario_id, mes_referencia, status: bool):
+    """Define o status de indisponibilidade para o mês todo de um voluntário."""
+    engine = get_engine()
+    with engine.begin() as conn: # Bloco de transação único
+        conn.execute(text("""
+            INSERT INTO disponibilidades (voluntario_id, mes_referencia, indisponivel_o_mes_todo)
+            VALUES (:vol_id, :mes_ref, :status)
+            ON CONFLICT (voluntario_id, mes_referencia)
+            DO UPDATE SET indisponivel_o_mes_todo = :status;
+        """), {'vol_id': voluntario_id, 'mes_ref': mes_referencia, 'status': status})
+    return True
 
-def set_status_indisponibilidade_mes(conn, voluntario_id, mes_referencia, status: bool):
-    c = conn.cursor()
-    try:
-        c.execute("UPDATE disponibilidades SET indisponivel_o_mes_todo = ? WHERE voluntario_id = ? AND mes_referencia = ?", (status, voluntario_id, mes_referencia))
-        if c.rowcount == 0:
-            c.execute("INSERT INTO disponibilidades (voluntario_id, mes_referencia, indisponivel_o_mes_todo) VALUES (?, ?, ?)", (voluntario_id, mes_referencia, status))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Erro ao definir status de indisponibilidade mensal: {e}")
-        conn.rollback()
-        return False
-
-def get_ids_indisponiveis_para_o_mes(conn, mes_referencia):
-    df = pd.read_sql_query("SELECT voluntario_id FROM disponibilidades WHERE mes_referencia = ? AND indisponivel_o_mes_todo = TRUE", conn, params=(mes_referencia,))
-    return df['voluntario_id'].tolist()
+def get_ids_indisponiveis_para_o_mes(mes_referencia):
+    """Retorna uma lista de IDs de voluntários indisponíveis para o mês todo."""
+    engine = get_engine()
+    with engine.connect() as conn: # Apenas leitura
+        df = pd.read_sql(text("SELECT voluntario_id FROM disponibilidades WHERE mes_referencia = :mes_ref AND indisponivel_o_mes_todo = TRUE"), conn, params={'mes_ref': mes_referencia})
+        return df['voluntario_id'].tolist()

@@ -17,14 +17,13 @@ def show_page():
         st.stop()
     
     # --- Conteúdo da Página ---
-    conn = st.session_state.db_conn
     st.title("🔄 Solicitações de Troca de Escala")
     st.markdown("---")
 
     st.subheader("Solicitações Pendentes de Aprovação")
 
     try:
-        solicitacoes_pendentes_df = db.get_solicitacoes_pendentes(conn)
+        solicitacoes_pendentes_df = db.get_solicitacoes_pendentes()
 
         if solicitacoes_pendentes_df.empty:
             st.info("Não há nenhuma solicitação de troca pendente no momento.")
@@ -41,7 +40,7 @@ def show_page():
                     col1, col2, _ = st.columns([1, 1, 4])
                     with col1:
                         if st.button("✅ Aprovar", key=f"aprovar_{solicitacao_id}", use_container_width=True, type="primary"):
-                            if db.processar_solicitacao(conn, solicitacao_id, 'aprovada'):
+                            if db.processar_solicitacao(solicitacao_id, 'aprovada'):
                                 st.success("Troca aprovada e escala atualizada com sucesso!")
                                 st.rerun()
                             else:
@@ -49,7 +48,7 @@ def show_page():
                     
                     with col2:
                         if st.button("❌ Negar", key=f"negar_{solicitacao_id}", use_container_width=True):
-                            if db.processar_solicitacao(conn, solicitacao_id, 'negada'):
+                            if db.processar_solicitacao(solicitacao_id, 'negada'):
                                 st.warning("Solicitação negada.")
                                 st.rerun()
                             else:

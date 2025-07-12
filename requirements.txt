@@ -1,3 +1,4 @@
+# requirements.txt
 streamlit
 pandas
 bcrypt
@@ -5,4 +6,6 @@ python-dateutil
 openpyxl
 weasyprint
 numpy
-streamlit-js-eval
+sqlalchemy
+psycopg2-binary
+reportlab
