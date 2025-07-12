@@ -132,7 +132,7 @@ def gerar_pdf_escala(dados_agrupados: dict, mes_referencia: str):
         display: flex;
         justify-content: space-between; /* Espaçamento entre as colunas */
         align-items: flex-start;
-        gap: 6px; /* Espaço entre as colunas */
+        gap: 2px; /* Espaço entre as colunas */
     }
     .coluna {
         flex: 1; /* Faz as colunas terem a mesma largura */
