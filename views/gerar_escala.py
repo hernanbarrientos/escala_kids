@@ -72,9 +72,25 @@ def show_page():
                                 if len(partes_atribuicao) > 1 and partes_atribuicao[-1].isdigit():
                                     base_atribuicao = ' '.join(partes_atribuicao[:-1])
                                 candidatos = voluntarios_df[voluntarios_df['atribuicoes'].str.contains(base_atribuicao, na=False, regex=False)]
+                                
+                                # Lógica de disponibilidade atualizada.
                                 if not disponibilidades_df.empty:
-                                    ids_disponiveis = disponibilidades_df[disponibilidades_df['datas_disponiveis'].str.contains(culto_str, na=False, regex=False)]['voluntario_id']
-                                    candidatos = candidatos[candidatos['id'].isin(ids_disponiveis)]
+                                    # IDs de quem REGISTROU alguma disponibilidade este mês
+                                    ids_com_registro = disponibilidades_df['voluntario_id'].unique()
+                                    
+                                    # IDs de quem EXPLICITAMENTE marcou este dia
+                                    ids_disponiveis_explicitamente = disponibilidades_df[
+                                        disponibilidades_df['datas_disponiveis'].str.contains(culto_str, na=False, regex=False)
+                                    ]['voluntario_id'].unique()
+
+                                    # Um candidato é elegível se:
+                                    # 1. Ele NÃO está na lista de quem registrou (disponível por padrão)
+                                    # OU
+                                    # 2. Ele ESTÁ na lista de quem marcou este dia especificamente
+                                    candidatos = candidatos[
+                                        (~candidatos['id'].isin(ids_com_registro)) | 
+                                        (candidatos['id'].isin(ids_disponiveis_explicitamente))
+                                    ]
                                 if tipo_culto_key.startswith("Domingo") and dia <= 7 and not disponibilidades_df.empty:
                                     ids_serviram_ceia = disponibilidades_df[disponibilidades_df['ceia_passada'] == 'Sim']['voluntario_id']
                                     candidatos = candidatos[~candidatos['id'].isin(ids_serviram_ceia)]
@@ -121,7 +137,6 @@ def show_page():
     if 'Baby Auxiliar' in escala_pivot.columns:
         escala_pivot = escala_pivot.drop(columns=['Baby Auxiliar'])
     
-    # --- PONTO CENTRAL DA CORREÇÃO ---
     if not escala_pivot.empty:
         # 1. Garante que a coluna 'Apoio' seja sempre um espelho da 'Recepção'
         # Isso força a regra de negócio diretamente na tabela que será exibida
