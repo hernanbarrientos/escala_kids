@@ -1,0 +1,26 @@
+# Banco de dados local
+voluntarios.db
+
+# Testes
+__init__.py
+test_database.py
+.tests/
+
+# Secrets.toml
+.streamlit/secrets.toml
+
+# migração do SQLite para o PostgreSQL
+migracao.py
+
+# Arquivos temporários do Python
+__pycache__/
+*.py[cod]
+
+# Configurações locais do VS Code ou outros editores
+.vscode/
+*.swp
+
+# Arquivos de sistema
+.DS_Store
+Thumbs.db
+

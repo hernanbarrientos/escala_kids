@@ -1,3 +1,11 @@
+# requirements.txt
 streamlit
 pandas
+bcrypt
+python-dateutil
 openpyxl
+weasyprint
+numpy
+sqlalchemy
+psycopg2-binary
+reportlab
