@@ -15,9 +15,6 @@ def show_page():
 
     tab_gerenciar, tab_adicionar, tab_config_escala = st.tabs(["👥 Gerenciar Usuários", "➕ Adicionar Usuário", "⚙️ Configurar Escala"])
 
-    # =================================================
-    # ABA 1: Gerenciar Usuários (Layout e Lógica Corrigidos)
-    # =================================================
     with tab_gerenciar:
         st.subheader("Lista de Usuários Cadastrados")
         
@@ -41,38 +38,33 @@ def show_page():
                 usuario_selecionado = db.get_voluntario_by_id(id_selecionado)
                 
                 if usuario_selecionado:
-                    # --- INÍCIO DA LÓGICA CORRIGIDA ---
-                    
-                    # Formulário principal para salvar alterações
+                    # Carrega dados de disponibilidade
+                    disponibilidade_geral_usuario = usuario_selecionado.get("disponibilidade") or ""
+                    opcoes_agrupadas, mes_ref = utils.get_dias_culto_proximo_mes(disponibilidade_geral_usuario.split(','))
+                    disponibilidade_salva = db.carregar_disponibilidade(id_selecionado, mes_ref)
+                    datas_disponiveis_salvas = (disponibilidade_salva.get('datas_disponiveis') or "").split(',') if disponibilidade_salva else []
+                    serviu_ceia_salvo = disponibilidade_salva.get('ceia_passada', 'Não') if disponibilidade_salva else "Não"
+                    status_indisponibilidade_atual = db.get_status_indisponibilidade_mes(id_selecionado, mes_ref)
+
                     with st.form(key=f"form_editar_usuario_{id_selecionado}"):
                         st.write(f"**Editando:** {usuario_selecionado['nome']}")
                         
-                        # Campos comuns a todos os usuários
                         nome = st.text_input("Nome", value=usuario_selecionado["nome"])
                         usuario_login = st.text_input("Usuário (Login)", value=usuario_selecionado["usuario"])
                         nova_senha = st.text_input("Nova Senha", type="password", placeholder="Deixe em branco para não alterar")
                         
                         atribuicoes_selecionadas = []
                         disponibilidade_selecionada = []
-                        datas_selecionadas_atuais = []
-                        ceia_passada_radio = "Não"
-                        
-                        # --- Bloco de campos que só aparecem para VOLUNTÁRIOS ---
                         if usuario_selecionado['role'] == 'voluntario':
                             atribuicoes_selecionadas = utils.select_from_list("Atribuições", utils.ATRIBUICOES_LISTA, usuario_selecionado.get("atribuicoes"), f"edit_atr_{id_selecionado}")
                             disponibilidade_selecionada = utils.select_from_list("Disponibilidade Geral", utils.DISPONIBILIDADE_OPCOES, usuario_selecionado.get("disponibilidade"), f"edit_disp_{id_selecionado}")
 
                             st.markdown("---")
-                            # Carrega dados de disponibilidade específica
-                            opcoes_agrupadas, mes_ref = utils.get_dias_culto_proximo_mes(disponibilidade_selecionada)
-                            disponibilidade_salva = db.carregar_disponibilidade(id_selecionado, mes_ref)
-                            datas_disponiveis_salvas = (disponibilidade_salva.get('datas_disponiveis') or "").split(',') if disponibilidade_salva else []
-                            serviu_ceia_salvo = disponibilidade_salva.get('ceia_passada', 'Não') if disponibilidade_salva else "Não"
-
                             st.write(f"**Disponibilidade para a escala de {mes_ref}**")
                             ceia_passada_radio = st.radio("Serviu na Ceia do mês anterior?", ["Não", "Sim"], index=1 if serviu_ceia_salvo == "Sim" else 0, horizontal=True, key=f"ceia_{id_selecionado}")
                             st.write("Marque os dias que este voluntário **ESTÁ DISPONÍVEL**:")
                             
+                            datas_selecionadas_atuais = []
                             if opcoes_agrupadas:
                                 primeiro_domingo = utils.get_primeiro_domingo_mes(opcoes_agrupadas)
                                 serviu_na_ceia = (ceia_passada_radio == "Sim")
@@ -87,39 +79,31 @@ def show_page():
                                             if is_disabled: is_checked = False
                                             if st.checkbox(data_str, value=is_checked, key=f"disp_edit_{id_selecionado}_{full_option_str}", disabled=is_disabled):
                                                 datas_selecionadas_atuais.append(full_option_str)
+                            
+                            st.markdown("---")
+                            # --- PONTO DA CORREÇÃO 1: "Não escalar" movido para DENTRO do formulário ---
+                            st.write("**Trava de Segurança**")
+                            novo_status_indisponibilidade = st.checkbox(f"NÃO escalar em **{mes_ref.split(' de ')[0]}**", value=status_indisponibilidade_atual, key=f"lock_{id_selecionado}")
                         
-                        # Botão de submissão do formulário
                         if st.form_submit_button("💾 Salvar Alterações"):
                             db.editar_voluntario(id_selecionado, nome, usuario_login, nova_senha or None, ",".join(atribuicoes_selecionadas), ",".join(disponibilidade_selecionada), usuario_selecionado['role'])
                             if usuario_selecionado['role'] == 'voluntario':
+                                # Salva a disponibilidade e o status de "não escalar" junto
                                 db.salvar_disponibilidade(id_selecionado, ",".join(datas_selecionadas_atuais), ceia_passada_radio, mes_ref)
+                                db.set_status_indisponibilidade_mes(id_selecionado, mes_ref, novo_status_indisponibilidade)
                             st.success(f"Dados de '{nome}' atualizados com sucesso!")
                             st.rerun()
 
-                    # --- Seção de "Outras Ações" FORA DO FORMULÁRIO ---
-                    st.markdown("---")
-                    st.write(f"**Outras Ações para {usuario_selecionado['nome']}**")
-                    
-                    # Só mostra as outras ações se for um voluntário
-                    if usuario_selecionado['role'] == 'voluntario':
-                        col_lock, col_delete = st.columns(2)
-                        with col_lock:
-                            _, mes_ref_lock = utils.get_dias_culto_proximo_mes()
-                            status_atual = db.get_status_indisponibilidade_mes(id_selecionado, mes_ref_lock)
-                            novo_status = st.checkbox(f"NÃO escalar em **{mes_ref_lock.split(' de ')[0]}**", value=status_atual, key=f"lock_{id_selecionado}")
-                            if novo_status != status_atual:
-                                db.set_status_indisponibilidade_mes(id_selecionado, mes_ref_lock, novo_status)
-                                st.toast(f"Status de indisponibilidade de {usuario_selecionado['nome']} atualizado!", icon="🔒")
-                                st.rerun()
-                        with col_delete:
+                    # --- PONTO DA CORREÇÃO 2: Botão Excluir FORA do formulário e alinhado à direita ---
+                    if usuario_selecionado['role'] != 'admin':
+                        st.markdown("---")
+                        col_btn_excluir, _ = st.columns([1, 4]) # Coluna vazia à esquerda para empurrar o botão
+                        with col_btn_excluir:
                             if st.button("🗑️ Excluir Voluntário", use_container_width=True, type="secondary"):
                                 if st.confirm(f"ATENÇÃO: Você tem certeza que deseja excluir {usuario_selecionado['nome']}?"):
                                     db.excluir_voluntario(id_selecionado)
                                     st.success(f"Usuário '{usuario_selecionado['nome']}' excluído.")
                                     st.rerun()
-                    else: # Se for admin, mostra apenas a informação
-                        st.info("O usuário Administrador não pode ser excluído nem ter sua disponibilidade alterada aqui.")
-
         except Exception as e:
             st.error(f"Ocorreu um erro ao carregar os usuários: {e}")
 
