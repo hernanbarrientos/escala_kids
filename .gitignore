@@ -7,7 +7,7 @@ test_database.py
 .tests/
 
 # Secrets.toml
-# secrets.toml
+.streamlit/secrets.toml
 
 # migração do SQLite para o PostgreSQL
 migracao.py
