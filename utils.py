@@ -94,6 +94,7 @@ def get_dias_culto_proximo_mes(disponibilidade_geral_voluntario: list = None):
                 opcoes_agrupadas["Domingo Noite"].append(dia_formatado)
     return dict(opcoes_agrupadas), f"{nome_mes_ref} de {ano}"
 
+
 # --- FUNÇÕES DE SEGURANÇA (SENHAS) ---
 def hash_password(password):
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -263,3 +264,30 @@ def render_mobile_nav():
                 del st.session_state[key]
             st.session_state.page = 'login'; st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
+
+def select_from_list(label, options, defaults_str, key_prefix):
+    """Cria um grupo de checkboxes para seleção múltipla, com uma chave única."""
+    st.write(f"**{label}:**")
+    
+    # --- CORREÇÃO APLICADA AQUI ---
+    # Garante que, se a string de padrões for nula, ela se torne uma string vazia
+    if defaults_str is None:
+        defaults_str = ""
+    # --- FIM DA CORREÇÃO ---
+
+    defaults = [item.strip() for item in defaults_str.split(',') if item.strip()]
+    cols = st.columns(3)
+    selected = []
+    for i, option in enumerate(options):
+        with cols[i % 3]:
+            if st.checkbox(option, value=(option in defaults), key=f"{key_prefix}_{option}"):
+                selected.append(option)
+    return selected
+
+def get_primeiro_domingo_mes(opcoes_agrupadas):
+    """Encontra a data do primeiro domingo do mês a partir das opções de culto."""
+    domingo_datas = opcoes_agrupadas.get('Domingo Manhã', []) + opcoes_agrupadas.get('Domingo Noite', [])
+    if not domingo_datas:
+        return None
+    # Ordena para garantir que a primeira data seja realmente a primeira do mês
+    return sorted(list(set(domingo_datas)))[0]

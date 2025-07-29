@@ -73,24 +73,30 @@ def show_page():
                                     base_atribuicao = ' '.join(partes_atribuicao[:-1])
                                 candidatos = voluntarios_df[voluntarios_df['atribuicoes'].str.contains(base_atribuicao, na=False, regex=False)]
                                 
-                                # Lógica de disponibilidade atualizada.
+                                # --- PONTO CENTRAL DA CORREÇÃO ---
+                                # Lógica de disponibilidade atualizada para tratar registros em branco como "disponível".
                                 if not disponibilidades_df.empty:
-                                    # IDs de quem REGISTROU alguma disponibilidade este mês
-                                    ids_com_registro = disponibilidades_df['voluntario_id'].unique()
+                                    # Filtra para obter apenas os registros onde o voluntário fez uma seleção explícita (não vazia)
+                                    registros_com_datas = disponibilidades_df[disponibilidades_df['datas_disponiveis'].notna() & (disponibilidades_df['datas_disponiveis'] != '')]
+
+                                    # IDs de todos que fizeram uma seleção explícita (não vazia)
+                                    ids_com_selecao_explicita = registros_com_datas['voluntario_id'].unique()
                                     
-                                    # IDs de quem EXPLICITAMENTE marcou este dia
-                                    ids_disponiveis_explicitamente = disponibilidades_df[
-                                        disponibilidades_df['datas_disponiveis'].str.contains(culto_str, na=False, regex=False)
+                                    # Desses, IDs dos que marcaram ESTE dia
+                                    ids_disponiveis_explicitamente = registros_com_datas[
+                                        registros_com_datas['datas_disponiveis'].str.contains(culto_str, na=False)
                                     ]['voluntario_id'].unique()
 
                                     # Um candidato é elegível se:
-                                    # 1. Ele NÃO está na lista de quem registrou (disponível por padrão)
+                                    # 1. Ele NÃO está na lista de quem fez uma seleção explícita (ou seja, não registrou OU registrou em branco -> disponível por padrão)
                                     # OU
-                                    # 2. Ele ESTÁ na lista de quem marcou este dia especificamente
+                                    # 2. Ele ESTÁ na lista dos que marcaram este dia especificamente
                                     candidatos = candidatos[
-                                        (~candidatos['id'].isin(ids_com_registro)) | 
+                                        (~candidatos['id'].isin(ids_com_selecao_explicita)) | 
                                         (candidatos['id'].isin(ids_disponiveis_explicitamente))
                                     ]
+                                # --- FIM DA CORREÇÃO ---
+
                                 if tipo_culto_key.startswith("Domingo") and dia <= 7 and not disponibilidades_df.empty:
                                     ids_serviram_ceia = disponibilidades_df[disponibilidades_df['ceia_passada'] == 'Sim']['voluntario_id']
                                     candidatos = candidatos[~candidatos['id'].isin(ids_serviram_ceia)]
@@ -138,16 +144,12 @@ def show_page():
         escala_pivot = escala_pivot.drop(columns=['Baby Auxiliar'])
     
     if not escala_pivot.empty:
-        # 1. Garante que a coluna 'Apoio' seja sempre um espelho da 'Recepção'
-        # Isso força a regra de negócio diretamente na tabela que será exibida
         if 'Recepção' in escala_pivot.columns and 'Apoio' in escala_pivot.columns:
             escala_pivot['Apoio'] = escala_pivot['Recepção']
 
-        # 2. Lógica inteligente de preenchimento que roda DEPOIS da regra de negócio
         for data_culto, row in escala_pivot.iterrows():
             tipo_culto = data_culto.split(' - ')[1]
             
-            # Precisamos considerar 'Apoio' como uma função necessária se 'Recepção' for
             funcoes_necessarias_base = list(NECESSIDADES_ESCALA.get(tipo_culto, {}).keys())
             if 'Recepção' in funcoes_necessarias_base:
                 funcoes_necessarias_base.append('Apoio')
@@ -158,12 +160,10 @@ def show_page():
                         escala_pivot.loc[data_culto, funcao] = "**VAGA NÃO PREENCHIDA**"
                     else:
                         escala_pivot.loc[data_culto, funcao] = "--NÃO APLICA--"
-    # --- FIM DA CORREÇÃO ---
 
     with col_exportar:
         if not escala_salva_df.empty:
             df_para_pdf = escala_salva_df.copy()
-            # Garante que a regra Apoio=Recepção também seja aplicada nos dados do PDF
             if 'Recepção' in df_para_pdf['funcao'].values:
                 recepcao_df = df_para_pdf[df_para_pdf['funcao'] == 'Recepção'].copy()
                 recepcao_df['funcao'] = 'Apoio'
@@ -213,7 +213,6 @@ def show_page():
             voluntarios_aptos = voluntarios_df_editor[voluntarios_df_editor['atribuicoes'].str.contains(base_funcao, na=False)]['nome'].tolist()
             opcoes_por_funcao[funcao] = ["**VAGA NÃO PREENCHIDA**"] + sorted(voluntarios_aptos)
         
-        # Garante que as opções do Apoio sejam as mesmas da Recepção
         if 'Recepção' in opcoes_por_funcao:
             opcoes_por_funcao['Apoio'] = opcoes_por_funcao['Recepção']
 
@@ -230,14 +229,13 @@ def show_page():
             
             escala_long_format.replace("--NÃO APLICA--", pd.NA, inplace=True)
             
-            # Força a regra de negócio Apoio=Recepção ANTES de salvar
             for index, row in escala_long_format.iterrows():
                 if row['funcao'] == 'Recepção':
                     apoio_index = escala_long_format[(escala_long_format['data_culto'] == row['data_culto']) & (escala_long_format['funcao'] == 'Apoio')].index
                     if not apoio_index.empty:
                         escala_long_format.loc[apoio_index, 'voluntario_nome'] = row['voluntario_nome']
 
-            escala_long_format.replace("**VAGA NÃO PREENCHIDA**", pd.NA, inplace=True)
+            escala_long_format.replace("**VAGA NÃO PREENCHida**", pd.NA, inplace=True)
             
             mapa_nome_id = pd.Series(voluntarios_df_editor.id.values, index=voluntarios_df_editor.nome).to_dict()
             escala_long_format['voluntario_id'] = escala_long_format['voluntario_nome'].map(mapa_nome_id)

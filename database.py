@@ -33,7 +33,7 @@ def criar_tabelas():
             conn.execute(text("CREATE TABLE IF NOT EXISTS feedbacks (id SERIAL PRIMARY KEY, voluntario_id INTEGER NOT NULL REFERENCES voluntarios(id) ON DELETE CASCADE, voluntario_nome TEXT NOT NULL, data_culto TEXT NOT NULL, funcao TEXT NOT NULL, comentario TEXT NOT NULL, status TEXT DEFAULT 'novo', timestamp_criacao TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)"))
             
             # Cria o usuário admin se não existir
-            result = conn.execute(text("SELECT COUNT(*) FROM voluntarios WHERE usuario ILIKE :user"), {'user': 'admin'}).scalar_one()
+            result = conn.execute(text("SELECT COUNT(*) FROM voluntarios WHERE LOWER(usuario) = LOWER(:user)"), {'user': 'admin'}).scalar_one()
             if result == 0:
                 senha_hash = utils.hash_password("admin123")
                 conn.execute(text("INSERT INTO voluntarios (nome, usuario, senha, primeiro_acesso, role) VALUES (:nome, :user, :senha, 0, 'admin')"), {'nome': 'Administrador', 'user': 'admin', 'senha': senha_hash})
@@ -63,7 +63,7 @@ def autenticar_voluntario(usuario, senha_fornecida):
     """Autentica um voluntário, verificando usuário e senha."""
     engine = get_engine()
     with engine.connect() as conn: # Apenas leitura, 'connect' é suficiente
-        query = text("SELECT * FROM voluntarios WHERE usuario ILIKE :user")
+        query = text("SELECT * FROM voluntarios WHERE LOWER(usuario) = LOWER(:user)")
         result = conn.execute(query, {'user': usuario}).fetchone()
         if result:
             user_data = result._asdict()
