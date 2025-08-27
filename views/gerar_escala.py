@@ -52,7 +52,11 @@ def show_page():
                 escala_gerada = []
                 ano, mes = proximo_mes_data.year, proximo_mes_data.month
                 num_dias_mes = calendar.monthrange(ano, mes)[1]
+
                 for dia in range(1, num_dias_mes + 1):
+                    # --- NOVA REGRA (1/3): Inicia a memória para este dia específico ---
+                    ja_escalados_neste_dia = []
+
                     data_atual = datetime(ano, mes, dia)
                     dia_semana = data_atual.weekday()
                     tipos_culto_dia = []
@@ -60,11 +64,12 @@ def show_page():
                     elif dia_semana == 6:
                         tipos_culto_dia.append(f"{data_atual.strftime('%d/%m')} - Domingo Manhã")
                         tipos_culto_dia.append(f"{data_atual.strftime('%d/%m')} - Domingo Noite")
+
                     for culto_str in tipos_culto_dia:
                         tipo_culto_key = culto_str.split(' - ')[1]
                         if tipo_culto_key not in NECESSIDADES_ESCALA: continue
                         necessidades = NECESSIDADES_ESCALA[tipo_culto_key]
-                        ja_escalados_neste_culto = []
+                        
                         for atribuicao, quantidade in necessidades.items():
                             for i in range(quantidade):
                                 partes_atribuicao = atribuicao.split(' ')
@@ -73,45 +78,40 @@ def show_page():
                                     base_atribuicao = ' '.join(partes_atribuicao[:-1])
                                 candidatos = voluntarios_df[voluntarios_df['atribuicoes'].str.contains(base_atribuicao, na=False, regex=False)]
                                 
-                                # --- PONTO CENTRAL DA CORREÇÃO ---
-                                # Lógica de disponibilidade atualizada para tratar registros em branco como "disponível".
                                 if not disponibilidades_df.empty:
-                                    # Filtra para obter apenas os registros onde o voluntário fez uma seleção explícita (não vazia)
                                     registros_com_datas = disponibilidades_df[disponibilidades_df['datas_disponiveis'].notna() & (disponibilidades_df['datas_disponiveis'] != '')]
-
-                                    # IDs de todos que fizeram uma seleção explícita (não vazia)
                                     ids_com_selecao_explicita = registros_com_datas['voluntario_id'].unique()
-                                    
-                                    # Desses, IDs dos que marcaram ESTE dia
                                     ids_disponiveis_explicitamente = registros_com_datas[
                                         registros_com_datas['datas_disponiveis'].str.contains(culto_str, na=False)
                                     ]['voluntario_id'].unique()
-
-                                    # Um candidato é elegível se:
-                                    # 1. Ele NÃO está na lista de quem fez uma seleção explícita (ou seja, não registrou OU registrou em branco -> disponível por padrão)
-                                    # OU
-                                    # 2. Ele ESTÁ na lista dos que marcaram este dia especificamente
                                     candidatos = candidatos[
                                         (~candidatos['id'].isin(ids_com_selecao_explicita)) | 
                                         (candidatos['id'].isin(ids_disponiveis_explicitamente))
                                     ]
-                                # --- FIM DA CORREÇÃO ---
 
                                 if tipo_culto_key.startswith("Domingo") and dia <= 7 and not disponibilidades_df.empty:
                                     ids_serviram_ceia = disponibilidades_df[disponibilidades_df['ceia_passada'] == 'Sim']['voluntario_id']
                                     candidatos = candidatos[~candidatos['id'].isin(ids_serviram_ceia)]
-                                candidatos = candidatos[~candidatos['id'].isin(ja_escalados_neste_culto)]
+                                
+                                # --- NOVA REGRA (2/3): Filtra usando a memória do dia todo ---
+                                candidatos = candidatos[~candidatos['id'].isin(ja_escalados_neste_dia)]
+
                                 if not candidatos.empty:
                                     candidatos_com_desempate = candidatos.copy()
                                     candidatos_com_desempate['desempate_aleatorio'] = np.random.rand(len(candidatos_com_desempate))
                                     voluntario_escolhido = candidatos_com_desempate.sort_values(by=['contagem', 'desempate_aleatorio'], ascending=[True, True]).iloc[0]
+                                    
                                     nome_escolhido = voluntario_escolhido['nome']
                                     id_escolhido = voluntario_escolhido['id']
+                                    
                                     escala_gerada.append({'Data': culto_str, 'Função': atribuicao, 'Voluntário Escalado': nome_escolhido})
-                                    ja_escalados_neste_culto.append(id_escolhido)
+                                    
+                                    # --- NOVA REGRA (3/3): Adiciona o voluntário à memória do dia ---
+                                    ja_escalados_neste_dia.append(id_escolhido)
                                     voluntarios_df.loc[voluntarios_df['id'] == id_escolhido, 'contagem'] += 1
                                 else:
                                     escala_gerada.append({'Data': culto_str, 'Função': atribuicao, 'Voluntário Escalado': '**VAGA NÃO PREENCHIDA**'})
+                
                 if escala_gerada:
                     escala_df = pd.DataFrame(escala_gerada)
                     entradas_apoio = []
