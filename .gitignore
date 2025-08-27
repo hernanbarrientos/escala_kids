@@ -11,6 +11,7 @@ test_database.py
 
 # migração do SQLite para o PostgreSQL
 migracao.py
+run_migration_002.py
 
 # Arquivos temporários do Python
 __pycache__/
